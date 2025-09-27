@@ -13,14 +13,12 @@ HOSTNAME = "ok913f.h.filess.io"
 DATABASE = "devdb_nicealone"
 PORT = "3305"
 USERNAME = "devdb_nicealone"
-PASSWORD = "<YOUR_PASSWORD>"
+PASSWORD = "e3b6cd2048144c123fda7d7f31b1129d891c4df3"
 
 # ==========================
 # Connection string
 # ==========================
-DATABASE_URL = (
-    f"mysql+mariadbconnector://{USERNAME}:{PASSWORD}@{HOSTNAME}:{PORT}/{DATABASE}"
-)
+DATABASE_URL = f"mysql+pymysql://{USERNAME}:{PASSWORD}@{HOSTNAME}:{PORT}/{DATABASE}"
 
 # Create engine
 engine = create_engine(
