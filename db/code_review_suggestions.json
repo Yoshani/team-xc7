@@ -5,7 +5,6 @@
     "line_start": 2,
     "line_end": 2,
     "suggestion": "Add type hints for parameters a and b",
-    "category": "Code Quality",
     "severity": "Medium",
     "created_at": "2025-09-27T10:05:00"
   },
@@ -15,7 +14,6 @@
     "line_start": 1,
     "line_end": 1,
     "suggestion": "Consider adding docstring for add_numbers function",
-    "category": "Documentation",
     "severity": "Low",
     "created_at": "2025-09-27T10:10:00"
   },
@@ -25,7 +23,6 @@
     "line_start": 6,
     "line_end": 6,
     "suggestion": "Consider adding docstring for multiply_numbers function",
-    "category": "Documentation",
     "severity": "Low",
     "created_at": "2025-09-27T10:10:00"
   },
@@ -35,7 +32,6 @@
     "line_start": 8,
     "line_end": 10,
     "suggestion": "Add print statement for debugging is optional, consider removing in production",
-    "category": "Debugging",
     "severity": "Low",
     "created_at": "2025-09-27T12:05:00"
   }
