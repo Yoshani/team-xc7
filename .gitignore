@@ -4,3 +4,5 @@
 /out/
 /*.ipr
 /*.iws
+
+tdp_secrets.py

@@ -6,42 +6,35 @@ Behavior:
 """
 
 import json
-import os
-from typing import Dict, List, Tuple, Optional
+from typing import Tuple, List, Dict
 
 from groq import Groq
+from sqlalchemy.orm import Session
 
-# ---------- CONFIG ----------
-DB_DIR = "/Users/yoshani/PycharmProjects/TDPProj/db/"
-SNAPSHOTS_FILE = os.path.join(DB_DIR, "code_snapshots.json")
-REVIEWS_FILE = os.path.join(DB_DIR, "code_review_suggestions.json")
+from agents.prod_metrics.constants import REVIEW_CATEGORIES
+from tdp_secrets import GROQ_API_KEY
+from db import db_operations as db_ops
+from db.db_operations import CodeSnapshot, CodeReviewSuggestion
 
-CATEGORIES = ["Code Quality", "Documentation", "Debugging", "Performance", "Security", "Style", "Other"]
+LLM_MODEL = "openai/gpt-oss-20b"
+LLM_TEMPERATURE = 0
+LLM_MAX_TOKENS = 512
+LLM_TOP_P = 1
+LLM_REASONING_EFFORT = "medium"
 
+CONFIDENCE_THRESHOLD = 0.6
 
-# ---------- Utilities ----------
-def load_json_file(path: str):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+VALID_LABELS = {"accepted", "modified", "not_handled"}
+DEFAULT_LABEL = "not_handled"
 
+DEFAULT_CATEGORY = "Other"
+DEFAULT_RECURRING_ISSUE = "Other"
+UNKNOWN_LABEL = "unknown"
 
-def find_snapshot_by_commit(snapshots: List[Dict], commit_id: str) -> Optional[Dict]:
-    for s in snapshots:
-        if s["commit_id"] == commit_id:
-            return s
-    return None
-
-
-def get_reviews_for_commit(reviews: List[Dict], commit_id: str) -> List[Dict]:
-    return [r for r in reviews if r["commit_id"] == commit_id]
-
-
-def split_lines(code_text: str) -> List[str]:
-    # keep newline semantics consistent; line numbers are 1-based
-    return code_text.split("\n")
+client = Groq(api_key=GROQ_API_KEY)
 
 
-def build_prompt(review, parent_code, child_code):
+def build_prompt(review: CodeReviewSuggestion, parent_code: str, child_code: str) -> str:
     """
     Builds a structured prompt for the LLM to classify the review.
     :param review: Code review dict with 'suggestion', 'line_start', 'line_end'
@@ -49,9 +42,14 @@ def build_prompt(review, parent_code, child_code):
     :param child_code: Child (AFTER) code snapshot text
     :return: JSON-based prompt string
     """
-    start, end = review.get("line_start", 1), review.get("line_end", 1)
+
     parent_lines = parent_code.splitlines()
     child_lines = child_code.splitlines()
+    total_lines = max(len(parent_lines), len(child_lines))
+
+    # Use defaults if missing
+    start = review.line_start if review.line_start is not None else 1
+    end = review.line_end if review.line_end is not None else total_lines
 
     parent_excerpt = "\n".join(parent_lines[max(0, start - 2):min(len(parent_lines), end + 2)])
     child_excerpt = "\n".join(child_lines[max(0, start - 2):min(len(child_lines), end + 2)])
@@ -68,7 +66,7 @@ def build_prompt(review, parent_code, child_code):
         - modified → the suggestion was implemented but with some variation, extension, or partial change.
         - not_handled → the suggestion was ignored, rejected, or missing from the updated code.
     
-        Predefined categories: {', '.join(CATEGORIES)}
+        Predefined categories: {', '.join(REVIEW_CATEGORIES)}
     
         Return a JSON object with fields:
         - label (one of: accepted, modified, not_handled)
@@ -79,7 +77,7 @@ def build_prompt(review, parent_code, child_code):
     
         ----
         Review comment:
-        \"\"\"{review.get('suggestion')}\"\"\"
+        \"\"\"{review.suggestion}\"\"\"
     
         Parent (BEFORE) code (lines {start}-{end} and small context):
         \"\"\"{parent_excerpt}\"\"\"
@@ -92,27 +90,30 @@ def build_prompt(review, parent_code, child_code):
         """
 
 
-# ---------- LLM-based classifier ----------
-def llm_classify_review(review: Dict, parent_snapshot: Dict, child_snapshot: Dict, client) -> Tuple[
-    str, float, str, str, str]:
+def llm_classify_review(review: CodeReviewSuggestion, parent_snapshot: CodeSnapshot, child_snapshot: CodeSnapshot) -> \
+        Tuple[str, float, str, str, str]:
     """
-    Uses Groq LLM (openai/gpt-oss-20b) to classify review.
-    Falls back to 'unknown' if confidence < 0.6 or JSON parsing fails.
-    Returns label, confidence (0-1), rationale text.
+    Uses LLM to classify a code review suggestion between parent and child snapshots.
+    Returns classification details, falling back to defaults if parsing fails or confidence is low.
+
+    :param review: CodeReviewSuggestion object
+    :param parent_snapshot: CodeSnapshot object representing the parent (BEFORE)
+    :param child_snapshot: CodeSnapshot object representing the child (AFTER)
+    :return: Tuple(classification label, confidence, rationale, category, recurring_issue)
     """
 
     # Build structured prompt
-    prompt = build_prompt(review, parent_snapshot["code_text"], child_snapshot["code_text"])
+    prompt = build_prompt(review, parent_snapshot.code_text, child_snapshot.code_text)
 
     # Call Groq model
     completion = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
+        model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-        max_completion_tokens=512,
-        top_p=1,
-        reasoning_effort="medium",
-        stream=False
+        temperature=LLM_TEMPERATURE,
+        max_completion_tokens=LLM_MAX_TOKENS,
+        top_p=LLM_TOP_P,
+        reasoning_effort=LLM_REASONING_EFFORT,
+        stream=False,
     )
 
     raw_output = completion.choices[0].message.content.strip()
@@ -126,84 +127,91 @@ def llm_classify_review(review: Dict, parent_snapshot: Dict, child_snapshot: Dic
         category = parsed.get("category", "").strip()
         recurring_issue = parsed.get("recurring_issue", "").strip()
     except Exception as e:
-        return ("unknown", 0.0,
-                f"Failed to parse model response: {raw_output[:200]} | error={e}",
-                "Other", "Other")
+        return (
+            DEFAULT_LABEL,
+            0.0,
+            f"Failed to parse model response: {raw_output[:200]} | error={e}",
+            DEFAULT_CATEGORY,
+            DEFAULT_RECURRING_ISSUE,
+        )
 
     # Confidence check
-    if confidence < 0.6:
-        return ("unknown", confidence,
-                f"Low confidence ({confidence:.2f}), queued for manual verification. Rationale: {rationale}",
-                category or "Other",
-                recurring_issue or "Other")
+    if confidence < CONFIDENCE_THRESHOLD:
+        return (
+            DEFAULT_LABEL,
+            confidence,
+            f"Low confidence ({confidence:.2f}), queued for manual verification. Rationale: {rationale}",
+            category or DEFAULT_CATEGORY,
+            recurring_issue or DEFAULT_RECURRING_ISSUE,
+        )
 
     # Ensure valid label/category
-    if label not in ("accepted", "modified", "not_handled"):
-        label = "not_handled"
-    if category not in CATEGORIES:
-        category = "Other"
+    if label not in VALID_LABELS:
+        label = DEFAULT_LABEL
+    if category not in REVIEW_CATEGORIES:
+        category = DEFAULT_CATEGORY
     if not recurring_issue:
-        recurring_issue = "Other"
+        recurring_issue = DEFAULT_RECURRING_ISSUE
 
     return label, confidence, rationale, category, recurring_issue
 
 
-# ---------- Main classification function ----------
-def classify_parent_reviews(merged_commit_id: str):
+def classify_commits(db: Session, merged_commit_id: str):
     """
-    Given a merged commit id (child), find parent, load relevant reviews,
-    and classify each review as accepted/modified/rejected/not_handled.
+    Walks the commit chain starting from the merged commit, traversing back through
+    parent commits, and classifies reviews for each parent-child pair.
+
+    :param db: Active database session
+    :param merged_commit_id: The final merged commit to analyze
+    :return: List of classification results across the commit chain
     """
-    # load data
-    snapshots = load_json_file(SNAPSHOTS_FILE)
-    reviews = load_json_file(REVIEWS_FILE)
+    current_snapshot: CodeSnapshot = db_ops.get_snapshot_by_commit(db, merged_commit_id)
+    if current_snapshot is None:
+        raise ValueError(f"Commit {merged_commit_id} not found in snapshots.")
 
-    child_snap = find_snapshot_by_commit(snapshots, merged_commit_id)
-    if child_snap is None:
-        raise ValueError(f"Child commit {merged_commit_id} not found in snapshots.")
+    all_classifications: List[Dict] = []
 
-    parent_id = child_snap.get("parent_commit_id")
-    if not parent_id:
-        raise ValueError(f"Child commit {merged_commit_id} has no parent_commit_id (cannot compare).")
+    # Traverse the chain backwards until root (parent_commit_id = None)
+    while current_snapshot.parent_commit_id:
+        parent_snapshot: CodeSnapshot = db_ops.get_snapshot_by_commit(db, current_snapshot.parent_commit_id)
+        if parent_snapshot is None:
+            raise ValueError(f"Parent commit {current_snapshot.parent_commit_id} not found in snapshots.")
 
-    parent_snap = find_snapshot_by_commit(snapshots, parent_id)
-    if parent_snap is None:
-        raise ValueError(f"Parent commit {parent_id} not found in snapshots.")
+        parent_reviews: List[CodeReviewSuggestion] = db_ops.get_reviews_for_commit(db, parent_snapshot.commit_id)
+        if not parent_reviews:
+            print(f"No reviews recorded for parent commit {parent_snapshot.commit_id}")
+            current_snapshot = parent_snapshot
+            continue
 
-    parent_reviews = get_reviews_for_commit(reviews, parent_id)
-    if not parent_reviews:
-        print(f"No reviews recorded for parent commit {parent_id}")
-        return []
+        # Classify each review
+        for review in parent_reviews:
+            try:
+                label, confidence, rationale, category, recurring_issue = llm_classify_review(
+                    review, parent_snapshot, current_snapshot
+                )
+                print(f"LLM classified review {review.review_id} -> {label} (conf={confidence})")
+            except Exception as e:
+                print(f"LLM classification failed for review {review.review_id}: {e}")
+                label, confidence, rationale, category, recurring_issue = (
+                    UNKNOWN_LABEL,
+                    0.0,
+                    f"Error, queued for manual verification {str(e)}",
+                    DEFAULT_CATEGORY,
+                    DEFAULT_RECURRING_ISSUE,
+                )
 
-    client = Groq(api_key="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")
-    results = []
+            all_classifications.append({
+                "review_id": review.review_id,
+                "parent_commit_id": parent_snapshot.commit_id,
+                "child_commit_id": current_snapshot.commit_id,
+                "classification": label,
+                "confidence": float(confidence),
+                "rationale": rationale,
+                "category": category or DEFAULT_CATEGORY,
+                "recurring_issue": recurring_issue or DEFAULT_RECURRING_ISSUE,
+            })
 
-    for review in parent_reviews:
-        try:
-            label, conf, rationale, category, recurring_issue = llm_classify_review(review, parent_snap, child_snap, client)
-            print(f"LLM classified review {review['review_id']} -> {label} (conf={conf})")
-        except Exception as e:
-            print(f"LLM classification failed for review {review['review_id']}: {e}")
-            label, conf, rationale, category, recurring_issue = "not_handled", 0.0, str(e), "Other", "Other"
+        # Move up the chain
+        current_snapshot = parent_snapshot
 
-        results.append({
-            "review_id": review["review_id"],
-            "parent_commit_id": parent_id,
-            "child_commit_id": merged_commit_id,
-            "classification": label,
-            "confidence": float(conf),
-            "rationale": rationale,
-            "category": category,
-            "recurring_issue": recurring_issue
-        })
-
-    return results
-
-
-# ---------- CLI ----------
-if __name__ == "__main__":
-
-    res = classify_parent_reviews("22222222-2222-2222-2222-222222222222")
-    print("\nClassification results:")
-    for result in res:
-        print(json.dumps(result, indent=2))
+    return all_classifications

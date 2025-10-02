@@ -6,6 +6,8 @@ Uses SQLAlchemy to connect to MariaDB
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+from tdp_secrets import DB_PASSWORD
+
 # ==========================
 # Database credentials
 # ==========================
@@ -13,7 +15,7 @@ HOSTNAME = "ok913f.h.filess.io"
 DATABASE = "devdb_nicealone"
 PORT = "3305"
 USERNAME = "devdb_nicealone"
-PASSWORD = "e3b6cd2048144c123fda7d7f31b1129d891c4df3"
+PASSWORD = DB_PASSWORD
 
 # ==========================
 # Connection string

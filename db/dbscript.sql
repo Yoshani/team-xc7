@@ -1,3 +1,5 @@
+-- noinspection SqlNoDataSourceInspectionForFile
+
 -- =========================================
 -- Database Schema for Context-aware End-to-End Software Development Assistant
 -- Compatible with MariaDB
@@ -7,7 +9,7 @@
 CREATE TABLE functional_requirements
 (
     fr_id       INT AUTO_INCREMENT PRIMARY KEY,
-    project_id  BINARY(16) NOT NULL,
+    project_id  CHAR(36)     NOT NULL,
     title       VARCHAR(255) NOT NULL,
     description TEXT,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -17,7 +19,7 @@ CREATE TABLE functional_requirements
 CREATE TABLE non_functional_requirements
 (
     nfr_id      INT AUTO_INCREMENT PRIMARY KEY,
-    project_id  BINARY(16) NOT NULL,
+    project_id  CHAR(36)     NOT NULL,
     category    VARCHAR(100) NOT NULL,
     description TEXT,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -47,9 +49,9 @@ CREATE TABLE seed_FR_NFR_pairs
 -- Table: Code_Snapshots
 CREATE TABLE code_snapshots
 (
-    commit_id        BINARY(16) NOT NULL PRIMARY KEY,
-    project_id       BINARY(16) NOT NULL,
-    parent_commit_id BINARY(16),
+    commit_id        CHAR(36)     NOT NULL PRIMARY KEY,
+    project_id       CHAR(36)     NOT NULL,
+    parent_commit_id CHAR(36),
     developer_name   VARCHAR(100) NOT NULL,
     code_text        LONGTEXT     NOT NULL,
     language         VARCHAR(50)  NOT NULL,
@@ -60,10 +62,10 @@ CREATE TABLE code_snapshots
 CREATE TABLE code_review_suggestions
 (
     review_id  INT AUTO_INCREMENT PRIMARY KEY,
-    commit_id  BINARY(16) NOT NULL,
+    commit_id  CHAR(36) NOT NULL,
     line_start INT,
     line_end   INT,
-    suggestion TEXT NOT NULL,
+    suggestion TEXT     NOT NULL,
     severity   VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (commit_id) REFERENCES code_snapshots (commit_id)
@@ -77,9 +79,11 @@ CREATE TABLE review_classifications
     review_id         INT           NOT NULL,
     category          VARCHAR(100),           -- classification category (e.g., Documentation, Code Quality, etc.)
     classification    VARCHAR(50)   NOT NULL, -- e.g., accepted, modified, not_handled
+    recurring_issue   VARCHAR(255),           -- e.g., "Improper error handling"
     confidence        DECIMAL(3, 2) NOT NULL, -- 0.00 - 1.00
     rationale         TEXT,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_review_classification UNIQUE (review_id),
     FOREIGN KEY (review_id) REFERENCES code_review_suggestions (review_id)
         ON DELETE CASCADE
 );
@@ -89,7 +93,7 @@ CREATE TABLE review_classifications
 CREATE TABLE risk_assessments
 (
     risk_id              INT AUTO_INCREMENT PRIMARY KEY,
-    commit_id            BINARY(16) NOT NULL,
+    commit_id            CHAR(36) NOT NULL,
     FR_completion_score  DECIMAL(5, 2),
     NFR_completion_score DECIMAL(5, 2),
     compilation_rate     DECIMAL(5, 2),
@@ -106,7 +110,7 @@ CREATE TABLE productivity_metrics
 (
     metric_id    INT AUTO_INCREMENT PRIMARY KEY,
     review_id    INT,
-    commit_id    BINARY(16) NOT NULL,
+    commit_id    CHAR(36)     NOT NULL,
     metric_name  VARCHAR(100) NOT NULL,
     metric_value VARCHAR(255),
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -125,12 +129,3 @@ CREATE TABLE system_logs
     details    TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- =========================================
--- Notes:
--- 1. project_id and commit_id are stored as BINARY(16) to hold UUIDs efficiently.
--- 2. AUTO_INCREMENT used for primary keys like fr_id, nfr_id, etc.
--- 3. LONGTEXT for code_text to handle large code snapshots.
--- 4. DECIMAL(5,2) / DECIMAL(10,2) used for metric scores.
--- 5. Foreign keys ensure relational integrity.
--- =========================================
