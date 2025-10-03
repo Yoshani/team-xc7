@@ -10,15 +10,16 @@ from typing import Tuple, List, Dict
 
 from sqlalchemy.orm import Session
 
-from agents.prod_metrics.constants import REVIEW_CATEGORIES
+from agents.prod_metrics.constants import REVIEW_CATEGORIES, CLASSIFICATION_ACCEPTED, CLASSIFICATION_MODIFIED, \
+    CLASSIFICATION_REJECTED
 from agents.prod_metrics.llm_agent import get_llm_completion
 from db import db_operations as db_ops
 from db.db_operations import CodeSnapshot, CodeReviewSuggestion
 
 CONFIDENCE_THRESHOLD = 0.6
 
-VALID_LABELS = {"accepted", "modified", "not_handled"}
-DEFAULT_LABEL = "not_handled"
+VALID_LABELS = {CLASSIFICATION_ACCEPTED, CLASSIFICATION_MODIFIED, CLASSIFICATION_REJECTED}
+DEFAULT_LABEL = CLASSIFICATION_REJECTED
 
 DEFAULT_CATEGORY = "Other"
 DEFAULT_RECURRING_ISSUE = "Other"
@@ -55,12 +56,12 @@ def build_prompt(review: CodeReviewSuggestion, parent_code: str, child_code: str
         Definitions:
         - accepted → the suggestion was fully implemented as written.
         - modified → the suggestion was implemented but with some variation, extension, or partial change.
-        - not_handled → the suggestion was ignored, rejected, or missing from the updated code.
+        - rejected → the suggestion was ignored, rejected, or missing from the updated code.
     
         Predefined categories: {', '.join(REVIEW_CATEGORIES)}
     
         Return a JSON object with fields:
-        - label (one of: accepted, modified, not_handled)
+        - label (one of: accepted, modified, rejected)
         - confidence (0-1)
         - category (one of the predefined categories above)
         - recurring_issue (short description, e.g., "missing type hints")

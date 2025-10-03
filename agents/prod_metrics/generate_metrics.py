@@ -99,7 +99,7 @@ def calculate_metrics(db: Session) -> tuple[dict, dict, dict, dict]:
                 handled_by_dev_day[dev_name][totals_day] += 1
             accepted_or_modified[dev_name] += 1
             category_counts[dev_name][category][CLASSIFICATION_ACCEPTED] += 1
-        elif classification_type == "not_handled":
+        elif classification_type == CLASSIFICATION_REJECTED:
             rejected[dev_name] += 1
             category_counts[dev_name][category][CLASSIFICATION_REJECTED] += 1
 
