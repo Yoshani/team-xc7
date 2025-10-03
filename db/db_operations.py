@@ -117,6 +117,17 @@ def get_reviews_for_commit(db: Session, commit_id: str):
 # --- Classifications ---
 def create_classification(db: Session, review_id: int, category: str, classification: str, recurring_issue: str,
                           confidence: float, rationale: str):
+    """
+    Create a new review classification entry.
+    :param db: SQLAlchemy session
+    :param review_id: Review ID
+    :param category: Category of the classification
+    :param classification: Classification label (accepted/modified/not_handled)
+    :param recurring_issue: Recurring issue description
+    :param confidence: Confidence score (0.0 to 1.0)
+    :param rationale: Rationale for the classification
+    :return: Created or existing ReviewClassification object
+    """
     existing = (
         db.query(ReviewClassification)
         .filter_by(review_id=review_id)
@@ -140,6 +151,31 @@ def create_classification(db: Session, review_id: int, category: str, classifica
 
 
 def get_classifications_for_review(db: Session, review_id: int):
+    """
+    Fetch all classifications for a given review ID.
+    :param db: SQLAlchemy session
+    :param review_id: Review ID to fetch classifications for
+    :return: Classifications list
+    """
     return db.query(ReviewClassification).filter(
         ReviewClassification.review_id == review_id
     ).all()
+
+
+def get_all_classifications_with_snapshot_info(db: Session):
+    """
+    Fetch all review classifications along with developer name and snapshot creation date.
+
+    :param db: SQLAlchemy session
+    :return: List of tuples (ReviewClassification, developer_name, snapshot_date)
+    """
+    return (
+        db.query(
+            ReviewClassification,
+            CodeSnapshot.developer_name,
+            CodeSnapshot.created_at.label("snapshot_date")
+        )
+        .join(CodeReviewSuggestion, ReviewClassification.review_id == CodeReviewSuggestion.review_id)
+        .join(CodeSnapshot, CodeSnapshot.commit_id == CodeReviewSuggestion.commit_id)
+        .all()
+    )

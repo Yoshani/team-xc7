@@ -1,0 +1,5 @@
+sqlalchemy~=2.0.43
+connection~=2021.7.20
+groq~=0.32.0
+fastapi~=0.117.1
+pydantic~=2.11.9

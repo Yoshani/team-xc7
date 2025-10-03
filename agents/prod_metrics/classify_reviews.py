@@ -8,19 +8,12 @@ Behavior:
 import json
 from typing import Tuple, List, Dict
 
-from groq import Groq
 from sqlalchemy.orm import Session
 
 from agents.prod_metrics.constants import REVIEW_CATEGORIES
-from tdp_secrets import GROQ_API_KEY
+from agents.prod_metrics.llm_agent import get_llm_completion
 from db import db_operations as db_ops
 from db.db_operations import CodeSnapshot, CodeReviewSuggestion
-
-LLM_MODEL = "openai/gpt-oss-20b"
-LLM_TEMPERATURE = 0
-LLM_MAX_TOKENS = 512
-LLM_TOP_P = 1
-LLM_REASONING_EFFORT = "medium"
 
 CONFIDENCE_THRESHOLD = 0.6
 
@@ -30,8 +23,6 @@ DEFAULT_LABEL = "not_handled"
 DEFAULT_CATEGORY = "Other"
 DEFAULT_RECURRING_ISSUE = "Other"
 UNKNOWN_LABEL = "unknown"
-
-client = Groq(api_key=GROQ_API_KEY)
 
 
 def build_prompt(review: CodeReviewSuggestion, parent_code: str, child_code: str) -> str:
@@ -102,21 +93,8 @@ def llm_classify_review(review: CodeReviewSuggestion, parent_snapshot: CodeSnaps
     :return: Tuple(classification label, confidence, rationale, category, recurring_issue)
     """
 
-    # Build structured prompt
     prompt = build_prompt(review, parent_snapshot.code_text, child_snapshot.code_text)
-
-    # Call Groq model
-    completion = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=LLM_TEMPERATURE,
-        max_completion_tokens=LLM_MAX_TOKENS,
-        top_p=LLM_TOP_P,
-        reasoning_effort=LLM_REASONING_EFFORT,
-        stream=False,
-    )
-
-    raw_output = completion.choices[0].message.content.strip()
+    raw_output = get_llm_completion(prompt)
 
     # Parse JSON response
     try:

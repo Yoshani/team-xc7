@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from agents.prod_metrics.classify_reviews import classify_commits
+from agents.prod_metrics.generate_metrics import calculate_metrics
 from db.connection import get_db
 from db import db_operations as db_ops
 
@@ -53,3 +54,16 @@ async def classify_snapshot(snapshot: SnapshotRequest, db: Session = Depends(get
         )
 
     return {"classifications": results}
+
+@app.get("/generate_metrics")
+async def generate_metrics(db: Session = Depends(get_db)):
+    """
+    Generate and return productivity metrics.
+    :param db: Database session
+    :return: Productivity metrics
+    """
+    suggestions_per_dev, acceptance_rate_per_dev, avg_per_dev_category, dev_recurring_issues = calculate_metrics(db)
+    return {"average_suggestions_handled_per_day": suggestions_per_dev,
+            "suggestion_acceptance_rate": acceptance_rate_per_dev,
+            "average_suggestions_handled_per_category_per_day": avg_per_dev_category,
+            "dev_specific_recurring_issues": dev_recurring_issues}
