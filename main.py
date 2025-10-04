@@ -55,6 +55,7 @@ async def classify_snapshot(snapshot: SnapshotRequest, db: Session = Depends(get
 
     return {"classifications": results}
 
+
 @app.get("/generate_metrics")
 async def generate_metrics(db: Session = Depends(get_db)):
     """
@@ -62,8 +63,13 @@ async def generate_metrics(db: Session = Depends(get_db)):
     :param db: Database session
     :return: Productivity metrics
     """
-    suggestions_per_dev, acceptance_rate_per_dev, avg_per_dev_category, dev_recurring_issues = calculate_metrics(db)
-    return {"average_suggestions_handled_per_day": suggestions_per_dev,
-            "suggestion_acceptance_rate": acceptance_rate_per_dev,
-            "average_suggestions_handled_per_category_per_day": avg_per_dev_category,
-            "dev_specific_recurring_issues": dev_recurring_issues}
+    suggestions_handled_per_dev, acceptance_rate_per_dev, avg_per_dev_category, dev_recurring_issues, sugesstions_handled_per_team, overall_acceptance_rate, avg_team_category, team_recurring_issues = calculate_metrics(
+        db)
+    return {"developer_productivity_metrics": {"average_suggestions_handled_per_day": suggestions_handled_per_dev,
+                                               "suggestion_acceptance_rate": acceptance_rate_per_dev,
+                                               "average_suggestions_handled_per_category_per_day": avg_per_dev_category,
+                                               "dev_specific_recurring_issues": dev_recurring_issues},
+            "team_productivity_metrics": {"average_suggestions_handled_per_day": sugesstions_handled_per_team,
+                                          "overall_suggestion_acceptance_rate": overall_acceptance_rate,
+                                          "average_suggestions_handled_per_category_per_day": avg_team_category,
+                                          "team_specific_recurring_issues": team_recurring_issues}}
