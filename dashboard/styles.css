@@ -1,0 +1,133 @@
+/* ===================================
+   GLOBAL PAGE STYLES
+   =================================== */
+html, body, [class*="stApp"] {
+    background-color: #0F172A; /* dark slate */
+    color: #E2E8F0; /* light gray text */
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+/* ===================================
+   TITLE & HEADER STYLES
+   =================================== */
+.title {
+    text-align: center;
+    font-size: 58px;
+    font-weight: 800;
+    font-family: Roboto sans-serif;
+    color: antiquewhite;
+    text-shadow: 0 0 12px rgba(34, 211, 238, 0.3);
+    letter-spacing: 0.5px;
+}
+
+h2 {
+    color: white;
+    font-weight: 700;
+    padding-left: 12px;
+    margin-top: 30px !important;
+    margin-bottom: 40px !important;
+}
+
+h3 {
+    color: white;
+    font-weight: 700;
+    padding-left: 30px !important;
+    margin-top: 60px !important;
+    margin-bottom: 40px !important;
+}
+
+/* ===================================
+   METRIC CARDS
+   =================================== */
+.metric-card {
+    background: linear-gradient(145deg, #1E293B, #0F172A);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    padding: 20px;
+    text-align: left;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    color: #F8FAFC;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+/* ===================================
+   LISTS (Requirements)
+   =================================== */
+ul {
+    margin: 0;
+    padding-left: 25px;
+    line-height: 1.7;
+    list-style-type: "• ";
+}
+
+ul li {
+    margin-bottom: 6px;
+}
+
+/* ===================================
+   PROGRESS BARS
+   =================================== */
+.stProgress > div > div {
+    background-color: #22D3EE !important;
+    border-radius: 6px !important;
+}
+
+/* ===================================
+   SIDEBAR
+   =================================== */
+[data-testid="stSidebar"] {
+    background-color: #1E293B;
+    color: #E2E8F0;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #22D3EE;
+}
+
+/* ===================================
+   CHARTS
+   =================================== */
+.plotly-legend {
+    font-size: 15px !important;
+    color: #E2E8F0 !important;
+}
+
+/* ===================================
+   CUSTOM BUTTONS & SELECT BOX
+   =================================== */
+button[kind="secondary"] {
+    background-color: #22D3EE !important;
+    color: #0F172A !important;
+    font-weight: 600;
+    border-radius: 8px !important;
+    transition: background-color 0.3s ease;
+}
+
+button[kind="secondary"]:hover {
+    background-color: #06B6D4 !important;
+}
+
+.stSelectbox [data-baseweb="select"] {
+    background-color: #1E293B;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #E2E8F0;
+}
+
+/* ===================================
+   FOOTER / SMALL TEXT
+   =================================== */
+footer {
+    text-align: center;
+    color: #94A3B8;
+    font-size: 14px;
+    margin-top: 40px;
+}
