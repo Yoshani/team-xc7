@@ -73,3 +73,7 @@ async def generate_metrics(db: Session = Depends(get_db)):
                                           "overall_suggestion_acceptance_rate": overall_acceptance_rate,
                                           "average_suggestions_handled_per_category_per_day": avg_team_category,
                                           "team_specific_recurring_issues": team_recurring_issues}}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
