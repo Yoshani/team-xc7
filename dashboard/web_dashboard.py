@@ -69,7 +69,7 @@ with col2:
     bg = color_map.get(decision, "#6c757d")
     emoji = emoji_map.get(decision, "")
     st.markdown(
-        f"<div class='metric-card' style='background-color:{bg}; font-size:24px;'>{emoji} Release Decision: {decision.upper()}</div>",
+        f"<div class='metric-card' style='background-color:{bg}; font-size:24px; text-align: center;'>{emoji}<br>Release Decision: {decision.upper()}</div>",
         unsafe_allow_html=True
     )
 
@@ -84,20 +84,27 @@ metrics = {
 
 for name, value in metrics.items():
     col1, col2, col3 = st.columns([1, 5, 1])
-    col1.write(f"{name}")
+    col1.markdown(f'<div class="metric-name">{name}</div>', unsafe_allow_html=True)
     col2.progress(int(value * 100))
-    col3.write(f"{value * 100:.1f}%")
+    col3.markdown(f'<div class="metric-value">{value * 100:.1f}%</div>', unsafe_allow_html=True)
 
 # ----- Functional Requirements -----
 st.markdown("### 📑 Functional Requirements")
-st.markdown("<div class='metric-card'><ul>" + "".join(
-    f"<li>{fr}</li>" for fr in requirements_data["functional_requirements"]) + "</ul></div>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='metric-card'><ul class='requirements-list'>" +
+    "".join(f"<li>{fr}</li>" for fr in requirements_data["functional_requirements"]) +
+    "</ul></div>",
+    unsafe_allow_html=True
+)
 
 # ----- Non-Functional Requirements -----
 st.markdown("### ⚙️ Non-Functional Requirements")
-st.markdown("<div class='metric-card'><ul>" + "".join(
-    f"<li>{nfr}</li>" for nfr in requirements_data["non_functional_requirements"]) + "</ul></div>",
-            unsafe_allow_html=True)
+st.markdown(
+    "<div class='metric-card'><ul class='requirements-list'>" +
+    "".join(f"<li>{nfr}</li>" for nfr in requirements_data["non_functional_requirements"]) +
+    "</ul></div>",
+    unsafe_allow_html=True
+)
 
 # ----- Team Metrics -----
 team_metrics = prod_metrics_data["team_productivity_metrics"]
@@ -105,12 +112,31 @@ st.header("📊 Team Metrics")
 
 # KPI Row
 col1, col2, col3 = st.columns(3)
-col1.metric("Avg Suggestions/Day", team_metrics["average_suggestions_handled_per_day"])
-col2.metric("Acceptance Rate", f"{team_metrics['overall_suggestion_acceptance_rate'] * 100:.1f}%")
-col3.metric("Top Issue Category",
-            max(team_metrics["average_suggestions_handled_per_category_per_day"],
-                key=team_metrics["average_suggestions_handled_per_category_per_day"].get)
-            )
+col1.markdown(f"""
+<div class="metric-card">
+    <div class="metric-name">Avg Suggestions/Day</div>
+    <div class="metric-value2">{team_metrics['average_suggestions_handled_per_day']}</div>
+</div>
+""", unsafe_allow_html=True)
+
+# Acceptance Rate
+acceptance = team_metrics['overall_suggestion_acceptance_rate'] * 100
+col2.markdown(f"""
+<div class="metric-card">
+  <div class="metric-name">Acceptance Rate</div>
+  <div class="metric-value2">{acceptance:.1f}%</div>
+</div>
+""", unsafe_allow_html=True)
+
+# Top Issue Category
+top_category = max(team_metrics["average_suggestions_handled_per_category_per_day"],
+                   key=team_metrics["average_suggestions_handled_per_category_per_day"].get)
+col3.markdown(f"""
+<div class="metric-card">
+  <div class="metric-name">Top Issue Category</div>
+  <div class="metric-value2">{top_category}</div>
+</div>
+""", unsafe_allow_html=True)
 
 # Charts Row
 st.markdown("### 📂 Suggestions Breakdown")
@@ -151,9 +177,11 @@ issue_fig.update_layout(
 st.plotly_chart(issue_fig, use_container_width=True)
 
 # -------- Developer Metrics --------
-st.header("👩‍💻 Developer Metrics")
+st.markdown("<hr>", unsafe_allow_html=True)
+st.header("👩‍💻 Individual Developer Metrics")
 devs = list(prod_metrics_data["developer_productivity_metrics"]["average_suggestions_handled_per_day"].keys())
-selected_dev = st.selectbox("Select Developer", devs)
+st.markdown("<div class='dev-metric'>Select Developer:</div>", unsafe_allow_html=True)
+selected_dev = st.selectbox("", devs)
 
 if selected_dev:
     dev_metrics = prod_metrics_data["developer_productivity_metrics"]
@@ -162,12 +190,12 @@ if selected_dev:
     st.markdown("### ✔ Acceptance Rate")
     acceptance = dev_metrics["suggestion_acceptance_rate"][selected_dev]
     st.progress(int(acceptance * 100))
-    st.write(f"**{acceptance * 100:.1f}% suggestions accepted**")
+    st.markdown(f"<p class='dev-metric-value'>{acceptance * 100:.1f}% suggestions accepted</p>", unsafe_allow_html=True)
 
     # Average Suggestions Handled/Day
     st.markdown("### 📈 Avg Suggestions Handled/Day")
     avg_suggestions = dev_metrics["average_suggestions_handled_per_day"][selected_dev]
-    st.markdown(f"<div class='metric-card' style='font-size:20px;'>{avg_suggestions}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-card' style='font-size:40px;'>{avg_suggestions}</div>", unsafe_allow_html=True)
 
     # Issues by Category
     st.markdown("### 📂 Issues by Category")
