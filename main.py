@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from agents.prod_metrics.classify_reviews import classify_commits
 from agents.prod_metrics.generate_metrics import calculate_metrics
+from agents.code_review.reviewer import router as code_review_router
 from db.connection import get_db
 from db import db_operations as db_ops
 
@@ -73,6 +74,8 @@ async def generate_metrics(db: Session = Depends(get_db)):
                                           "overall_suggestion_acceptance_rate": overall_acceptance_rate,
                                           "average_suggestions_handled_per_category_per_day": avg_team_category,
                                           "team_specific_recurring_issues": team_recurring_issues}}
+
+app.include_router(code_review_router, prefix="/agents", tags=["Code Review"])
 
 if __name__ == "__main__":
     import uvicorn
