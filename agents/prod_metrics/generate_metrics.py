@@ -90,6 +90,24 @@ def llm_group_recurring_issues(issues: list[str]) -> dict:
 from collections import defaultdict, Counter
 
 
+def batched_llm_grouped_recurring_issues(issues: list[str]) -> dict:
+    """
+    Groups recurring issues using LLM in batches to handle large inputs.
+    :param issues: Set of raw recurring issue strings
+    :return: Dict mapping canonical_category -> list of original issues
+    """
+    BATCH_SIZE = 5
+    all_grouped = {}
+
+    for i in range(0, len(issues), BATCH_SIZE):
+        batch = issues[i:i + BATCH_SIZE]
+        grouped = llm_group_recurring_issues(batch)
+        # Merge into all_grouped
+        for cat, originals in grouped.items():
+            all_grouped.setdefault(cat, []).extend(originals)
+    return all_grouped
+
+
 def calculate_metrics(db: Session) -> tuple[dict, dict, dict, dict, float, float, dict, dict]:
     """
     Calculate productivity metrics based on classified code reviews.
@@ -142,7 +160,7 @@ def calculate_metrics(db: Session) -> tuple[dict, dict, dict, dict, float, float
         team_total += 1
 
     all_issues = [issue for issues in raw_issues_by_dev.values() for issue in issues]
-    global_grouped = llm_group_recurring_issues(all_issues)
+    global_grouped = batched_llm_grouped_recurring_issues(all_issues)
 
     # --- DEV LEVEL ---
     acceptance_rate, avg_per_dev, grouped_issues, per_dev_category = calculate_developer_metrics(
