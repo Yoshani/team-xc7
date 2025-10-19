@@ -129,12 +129,18 @@ else:
 st.markdown("### ⚙️ Non-Functional Requirements")
 if requirements_data["non_functional_requirements"]:
     st.markdown(
-        "<div class='metric-card'><ul class='requirements-list'>" +
+        """
+        <div class='metric-card' style='max-height:300px; overflow-y:auto;'>
+            <ul class='requirements-list'>
+        """ +
         "".join(
             f"<li><b>{nfr['category']}:</b> {nfr['description']}</li>"
             for nfr in requirements_data["non_functional_requirements"]
         ) +
-        "</ul></div>",
+        """
+            </ul>
+        </div>
+        """,
         unsafe_allow_html=True
     )
 else:
