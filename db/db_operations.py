@@ -1,13 +1,13 @@
 """
 CRUD operations for DB
 """
+from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import List, Dict, Any
 
 from sqlalchemy import Column, String, Integer, Text, DateTime, DECIMAL, ForeignKey, func, text
 from sqlalchemy.orm import relationship, Session
-from typing import List, Dict, Any
 
 from .connection import Base, engine
 
@@ -58,6 +58,41 @@ class ReviewClassification(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     review = relationship("CodeReviewSuggestion", back_populates="classifications")
+
+
+class FunctionalRequirement(Base):
+    __tablename__ = "functional_requirements"
+
+    fr_id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(String(36), nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class NonFunctionalRequirement(Base):
+    __tablename__ = "non_functional_requirements"
+
+    nfr_id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(String(36), nullable=False)
+    category = Column(String(100))
+    description = Column(Text)
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+
+
+class RiskAssessment(Base):
+    __tablename__ = "risk_assessments"
+
+    risk_id = Column(Integer, primary_key=True, autoincrement=True)
+    commit_id = Column(String(36), ForeignKey("code_snapshots.commit_id"), nullable=False)
+    FR_completion_score = Column(DECIMAL(5, 2))
+    NFR_completion_score = Column(DECIMAL(5, 2))
+    compilation_rate = Column(DECIMAL(5, 2))
+    final_score = Column(DECIMAL(5, 2))
+    recommendation = Column(Text)
+    rationale = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+
+    snapshot = relationship("CodeSnapshot", backref="risk_assessments")
 
 
 # ==========================
@@ -181,14 +216,91 @@ def get_all_classifications_with_snapshot_info(db: Session):
         .all()
     )
 
-class NonFunctionalRequirement(Base):
-    __tablename__ = "non_functional_requirements"
 
-    nfr_id = Column(Integer, primary_key=True, autoincrement=True)
-    project_id = Column(String(36), nullable=False)   # matches CHAR(36)
-    category   = Column(String(100))                  # nullable is fine
-    description = Column(Text)                        # where we store the NFR text
-    created_at  = Column(DateTime, server_default=func.current_timestamp())
+def save_functional_requirements(db: Session, project_id: str, fr_list: list[str]) -> int:
+    """
+    Save a list of functional requirements for a given project ID.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :param fr_list: List of functional requirement titles/descriptions
+    :return: Number of rows inserted
+    """
+    count = 0
+    for fr in fr_list:
+        fr_obj = FunctionalRequirement(
+            project_id=project_id,
+            description=fr
+        )
+        db.add(fr_obj)
+        count += 1
+    db.commit()
+    return count
+
+
+def get_functional_requirements_by_project(db: Session, project_id: str):
+    """
+    Retrieves all functional requirements for a given project.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :return: List of FunctionalRequirement objects
+    """
+    return db.query(FunctionalRequirement).filter(FunctionalRequirement.project_id == project_id).all()
+
+
+def get_non_functional_requirements_by_project(db: Session, project_id: str):
+    """
+    Retrieves all non-functional requirements for a given project.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :return: List of NonFunctionalRequirement objects
+    """
+    return db.query(NonFunctionalRequirement).filter(NonFunctionalRequirement.project_id == project_id).all()
+
+
+def create_risk_assessment(db: Session, commit_id: str, FR_score: float, NFR_score: float,
+                           compilation_rate: float, final_score: float,
+                           recommendation: str, rationale: str) -> RiskAssessment:
+    """
+    Creates and saves a new risk assessment entry.
+    :param db: SQLAlchemy session
+    :param commit_id: Associated commit ID
+    :param FR_score: Functional requirement completion score
+    :param NFR_score: Non-functional requirement completion score
+    :param compilation_rate: Compilation success rate
+    :param final_score: Final aggregated risk score
+    :param recommendation: System recommendation (e.g., 'Go', 'No-Go')
+    :param rationale: Explanation behind the decision
+    :return: Created RiskAssessment object
+    """
+    risk = RiskAssessment(
+        commit_id=commit_id,
+        FR_completion_score=FR_score,
+        NFR_completion_score=NFR_score,
+        compilation_rate=compilation_rate,
+        final_score=final_score,
+        recommendation=recommendation,
+        rationale=rationale
+    )
+    db.add(risk)
+    db.commit()
+    db.refresh(risk)
+    return risk
+
+
+def get_risk_assessments_by_project(db: Session, project_id: str):
+    """
+    Retrieves all risk assessments for a given project by joining code_snapshots.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :return: List of tuples (RiskAssessment, CodeSnapshot)
+    """
+    return (
+        db.query(RiskAssessment, CodeSnapshot)
+        .join(CodeSnapshot, CodeSnapshot.commit_id == RiskAssessment.commit_id)
+        .filter(CodeSnapshot.project_id == project_id)
+        .all()
+    )
+
 
 def _as_str(x) -> str:
     if x is None:
@@ -217,8 +329,9 @@ def _as_str(x) -> str:
         return "\n".join(f"{k}: {v}" for k, v in x.items() if v is not None)
     return str(x)
 
+
 def save_nfrs_statement_to_description(
-    db: Session, project_id: str, items: List[Dict[str, Any]]
+        db: Session, project_id: str, items: List[Dict[str, Any]]
 ) -> int:
     """
     Persist NFRs into non_functional_requirements mapping:
@@ -256,6 +369,7 @@ def save_nfrs_statement_to_description(
     if inserted:
         db.commit()
     return inserted
+
 
 def save_nfrs(db: Session, project_id: str, nfr_items: list[dict | str], *, skip_empty: bool = True) -> int:
     """

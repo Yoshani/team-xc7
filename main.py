@@ -9,7 +9,7 @@ from agents.prod_metrics.classify_reviews import classify_commits
 from agents.prod_metrics.generate_metrics import calculate_metrics
 from db.connection import get_db
 from db import db_operations as db_ops
-from db.db_operations import save_nfrs_statement_to_description
+from db.db_operations import save_nfrs_statement_to_description, save_functional_requirements
 
 from agents.nfr_agent.engine import NFRGenerator
 
@@ -121,12 +121,14 @@ async def generate_nfrs(req: GenerateNFRRequest, db: Session = Depends(get_db)):
     if not isinstance(nfr_list, list):
         raise HTTPException(status_code=500, detail="Generator returned an unexpected format for NFRs.")
 
-    rows_saved = 0
+    rows_saved_fr, rows_saved_nfr = 0, 0
     if req.save_to_db:
         if not req.project_id:
             raise HTTPException(status_code=400, detail="project_id is required when save_to_db is true.")
         try:
-            rows_saved = save_nfrs_statement_to_description(db, req.project_id, nfr_list)
+            # Save FRs and NFRs
+            rows_saved_fr = save_functional_requirements(db, req.project_id, req.functional_requirements)
+            rows_saved_nfr = save_nfrs_statement_to_description(db, req.project_id, nfr_list)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"DB error: {e}")
 
@@ -134,9 +136,56 @@ async def generate_nfrs(req: GenerateNFRRequest, db: Session = Depends(get_db)):
     result["_storage"] = {
         "requested_save": req.save_to_db,
         "project_id": req.project_id,
-        "rows_saved": rows_saved
+        "rows_saved": {
+            "functional_requirements": rows_saved_fr,
+            "non_functional_requirements": rows_saved_nfr
+        }
     }
     return result
+
+
+@app.get("/requirements/{project_id}")
+def get_requirements(project_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve all Functional and Non-Functional Requirements for a given project.
+    :param project_id: UUID of the project
+    :param db: Database session
+    :return: Dict with functional and non-functional requirements
+    """
+    try:
+        frs = db_ops.get_functional_requirements_by_project(db, project_id)
+        nfrs = db_ops.get_non_functional_requirements_by_project(db, project_id)
+
+        return {
+            "project_id": project_id,
+            "functional_requirements": [
+                {"fr_id": fr.fr_id, "description": fr.description, "created_at": fr.created_at}
+                for fr in frs
+            ],
+            "non_functional_requirements": [
+                {"nfr_id": nfr.nfr_id, "category": nfr.category, "description": nfr.description,
+                 "created_at": nfr.created_at}
+                for nfr in nfrs
+            ],
+            "counts": {"functional": len(frs), "non_functional": len(nfrs)}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/projects")
+def get_unique_projects(db: Session = Depends(get_db)):
+    """
+    Retrieve all unique project IDs from the functional_requirements table.
+    :param db: Database session
+    :return: List of project IDs
+    """
+    try:
+        result = db.query(db_ops.FunctionalRequirement.project_id).distinct().all()
+        projects = [row.project_id for row in result]
+        return {"projects": projects, "count": len(projects)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
 # (Optional) simple health check
