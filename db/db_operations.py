@@ -5,8 +5,9 @@ CRUD operations for DB
 import uuid
 from typing import Optional
 
-from sqlalchemy import Column, String, Integer, Text, DateTime, DECIMAL, ForeignKey, func
+from sqlalchemy import Column, String, Integer, Text, DateTime, DECIMAL, ForeignKey, func, text
 from sqlalchemy.orm import relationship, Session
+from typing import List, Dict, Any
 
 from .connection import Base, engine
 
@@ -179,3 +180,123 @@ def get_all_classifications_with_snapshot_info(db: Session):
         .join(CodeSnapshot, CodeSnapshot.commit_id == CodeReviewSuggestion.commit_id)
         .all()
     )
+
+class NonFunctionalRequirement(Base):
+    __tablename__ = "non_functional_requirements"
+
+    nfr_id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(String(36), nullable=False)   # matches CHAR(36)
+    category   = Column(String(100))                  # nullable is fine
+    description = Column(Text)                        # where we store the NFR text
+    created_at  = Column(DateTime, server_default=func.current_timestamp())
+
+def _as_str(x) -> str:
+    if x is None:
+        return ""
+    if isinstance(x, (str, int, float)):
+        return str(x)
+    if isinstance(x, list):
+        return "\n".join(_as_str(i) for i in x if i is not None)
+    if isinstance(x, dict):
+        # Build a sensible text if we get a dict instead of a string:
+        # prefer "statement", else try a few common keys, else flatten.
+        for k in ("statement", "requirement", "description", "text", "spec", "content"):
+            if k in x and x[k]:
+                return _as_str(x[k])
+        parts = []
+        if "title" in x and x["title"]:
+            parts.append(str(x["title"]))
+        if "rationale" in x and x["rationale"]:
+            parts.append("Rationale: " + _as_str(x["rationale"]))
+        if "acceptance_criteria" in x and x["acceptance_criteria"]:
+            parts.append("Acceptance Criteria:\n" + _as_str(x["acceptance_criteria"]))
+        if "metrics" in x and x["metrics"]:
+            parts.append("Measures:\n" + _as_str(x["metrics"]))
+        if parts:
+            return "\n\n".join(parts)
+        return "\n".join(f"{k}: {v}" for k, v in x.items() if v is not None)
+    return str(x)
+
+def save_nfrs_statement_to_description(
+    db: Session, project_id: str, items: List[Dict[str, Any]]
+) -> int:
+    """
+    Persist NFRs into non_functional_requirements mapping:
+      description := item['statement']
+      category    := item.get('category')
+    Skips rows with empty/missing 'statement'.
+    """
+    if not items:
+        return 0
+
+    inserted = 0
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        statement = (it.get("statement") or "").strip()
+        if not statement:
+            continue
+        category = it.get("category")
+        if category is not None:
+            category = str(category)[:100]
+
+        db.execute(
+            text(
+                "INSERT INTO non_functional_requirements (project_id, category, description) "
+                "VALUES (:project_id, :category, :description)"
+            ),
+            {
+                "project_id": project_id,
+                "category": category,
+                "description": statement,
+            },
+        )
+        inserted += 1
+
+    if inserted:
+        db.commit()
+    return inserted
+
+def save_nfrs(db: Session, project_id: str, nfr_items: list[dict | str], *, skip_empty: bool = True) -> int:
+    """
+    Save NFRs into non_functional_requirements.
+    - Primary text comes from `statement`.
+    - Falls back gracefully to other fields if shape differs.
+    """
+    to_insert = []
+    for nfr in (nfr_items or []):
+        # CATEGORY
+        category = None
+        if isinstance(nfr, dict):
+            category = nfr.get("category") or nfr.get("type") or nfr.get("group") or None
+            if not category and isinstance(nfr.get("tags"), list) and nfr["tags"]:
+                category = str(nfr["tags"][0])
+            if category:
+                category = str(category)[:100]
+
+        # DESCRIPTION (use statement first!)
+        if isinstance(nfr, dict) and "statement" in nfr and nfr["statement"]:
+            description = _as_str(nfr["statement"])
+        else:
+            # fallback: try other keys or compose
+            description = _as_str(nfr)
+
+        description = (description or "").strip()
+
+        if skip_empty and not description:
+            continue
+
+        to_insert.append(
+            NonFunctionalRequirement(
+                project_id=project_id,
+                category=category,
+                description=description
+            )
+        )
+
+    if not to_insert:
+        return 0
+
+    db.add_all(to_insert)
+    db.commit()
+    return len(to_insert)
