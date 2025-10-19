@@ -12,10 +12,12 @@ from db import db_operations as db_ops
 from db.db_operations import save_nfrs_statement_to_description
 
 from agents.nfr_agent.engine import NFRGenerator
+
 try:
     from agents.nfr_agent.engine import DEFAULT_MODEL
 except Exception:
     DEFAULT_MODEL = None
+
 
 class GenerateNFRRequest(BaseModel):
     functional_requirements: List[str] = Field(..., min_items=1)
@@ -23,6 +25,7 @@ class GenerateNFRRequest(BaseModel):
     model: Optional[str] = DEFAULT_MODEL
     project_id: Optional[str] = None
     save_to_db: bool = False
+
 
 TIMEOUT_SECONDS = 45  # fail fast instead of hanging forever
 
@@ -93,6 +96,7 @@ async def generate_metrics(db: Session = Depends(get_db)):
                                           "average_suggestions_handled_per_category_per_day": avg_team_category,
                                           "team_specific_recurring_issues": team_recurring_issues}}
 
+
 @app.post("/nfr/generate")
 async def generate_nfrs(req: GenerateNFRRequest, db: Session = Depends(get_db)):
     """
@@ -134,11 +138,14 @@ async def generate_nfrs(req: GenerateNFRRequest, db: Session = Depends(get_db)):
     }
     return result
 
+
 # (Optional) simple health check
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
-  
+
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)

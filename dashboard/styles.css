@@ -50,6 +50,48 @@ h3 {
     transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
+.metric-card.decision {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 14px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+    transition: all 0.3s ease;
+}
+
+/* --- Variants --- */
+.metric-card.decision.go {
+    background: linear-gradient(
+            135deg,
+            rgba(34, 197, 94, 0.25) 0%,
+            rgba(16, 185, 129, 0.15) 100%
+    ) !important;
+}
+
+.metric-card.decision.nogo {
+    background: linear-gradient(
+            135deg,
+            rgba(239, 68, 68, 0.25) 0%,
+            rgba(185, 28, 28, 0.15) 100%
+    ) !important;
+}
+
+.metric-card.decision.conditional {
+    background: linear-gradient(
+            135deg,
+            rgba(249, 115, 22, 0.25) 0%,
+            rgba(217, 119, 6, 0.15) 100%
+    ) !important;
+}
+
+/* --- Hover --- */
+.metric-card.decision:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(255, 255, 255, 0.1);
+    filter: brightness(1.08);
+}
+
+
 .metric-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);

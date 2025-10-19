@@ -56,20 +56,19 @@ decision = risk_data["release_decision"]
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    color_map = {
-        "Go": "#28a745",
-        "No-Go": "#dc3545",
-        "Conditional": "#fd7e14"
-    }
+    color_class = decision.lower().replace("-", "")
     emoji_map = {
         "Go": "✅",
         "No-Go": "❌",
         "Conditional": "⚠️"
     }
-    bg = color_map.get(decision, "#6c757d")
     emoji = emoji_map.get(decision, "")
     st.markdown(
-        f"<div class='metric-card' style='background-color:{bg}; font-size:24px; text-align: center;'>{emoji}<br>Release Decision: {decision.upper()}</div>",
+        f"""
+        <div class="metric-card decision {color_class}">
+            {emoji}<br>Release Decision: {decision.upper()}
+        </div>
+        """,
         unsafe_allow_html=True
     )
 
@@ -181,7 +180,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 st.header("👩‍💻 Individual Developer Metrics")
 devs = list(prod_metrics_data["developer_productivity_metrics"]["average_suggestions_handled_per_day"].keys())
 st.markdown("<div class='dev-metric'>Select Developer:</div>", unsafe_allow_html=True)
-selected_dev = st.selectbox("", devs)
+selected_dev = st.selectbox("Dummy", devs)
 
 if selected_dev:
     dev_metrics = prod_metrics_data["developer_productivity_metrics"]
