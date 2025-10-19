@@ -58,6 +58,13 @@ class ReviewClassification(Base):
 
     review = relationship("CodeReviewSuggestion", back_populates="classifications")
 
+class NonFunctionalRequirement(Base):
+    __tablename__ = "non_functional_requirements"
+
+    nfr_id = Column(Integer, primary_key=True)
+    project_id = Column(String(36), nullable=False)
+    category = Column(String(100), nullable=False)
+    description = Column(Text)
 
 # ==========================
 # Create tables (one-time init)
@@ -179,3 +186,7 @@ def get_all_classifications_with_snapshot_info(db: Session):
         .join(CodeSnapshot, CodeSnapshot.commit_id == CodeReviewSuggestion.commit_id)
         .all()
     )
+
+def get_nfrs_for_project(db: Session, project_id: str):
+    """Fetches all NFRs for a given project."""
+    return db.query(NonFunctionalRequirement).filter(NonFunctionalRequirement.project_id == project_id).all()
