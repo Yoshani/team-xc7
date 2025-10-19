@@ -1,12 +1,34 @@
-from fastapi import FastAPI, Depends
-from pydantic import BaseModel
+from fastapi import FastAPI, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from typing import List, Optional
+import asyncio
+from starlette.concurrency import run_in_threadpool
 
 from agents.prod_metrics.classify_reviews import classify_commits
 from agents.prod_metrics.generate_metrics import calculate_metrics
 from agents.code_review.reviewer import router as code_review_router
 from db.connection import get_db
 from db import db_operations as db_ops
+from db.db_operations import save_nfrs_statement_to_description, save_functional_requirements
+
+from agents.nfr_agent.engine import NFRGenerator
+
+try:
+    from agents.nfr_agent.engine import DEFAULT_MODEL
+except Exception:
+    DEFAULT_MODEL = None
+
+
+class GenerateNFRRequest(BaseModel):
+    functional_requirements: List[str] = Field(..., min_items=1)
+    domain: Optional[str] = None
+    model: Optional[str] = DEFAULT_MODEL
+    project_id: Optional[str] = None
+    save_to_db: bool = False
+
+
+TIMEOUT_SECONDS = 45  # fail fast instead of hanging forever
 
 app = FastAPI()
 
@@ -75,8 +97,107 @@ async def generate_metrics(db: Session = Depends(get_db)):
                                           "average_suggestions_handled_per_category_per_day": avg_team_category,
                                           "team_specific_recurring_issues": team_recurring_issues}}
 
+
+@app.post("/nfr/generate")
+async def generate_nfrs(req: GenerateNFRRequest, db: Session = Depends(get_db)):
+    """
+    Generate NFRs and (optionally) save them to MySQL.
+    description := statement
+    """
+    gen = NFRGenerator(model=req.model or DEFAULT_MODEL)
+
+    async def _do_generate():
+        # Run potentially blocking LLM call in a thread
+        return await run_in_threadpool(gen.generate, req.functional_requirements, req.domain)
+
+    try:
+        result = await asyncio.wait_for(_do_generate(), timeout=TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail=f"Generation timed out after {TIMEOUT_SECONDS}s")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # The generator may return either key; prefer non_functional_requirements
+    nfr_list = result.get("non_functional_requirements") or result.get("nfrs") or []
+    if not isinstance(nfr_list, list):
+        raise HTTPException(status_code=500, detail="Generator returned an unexpected format for NFRs.")
+
+    rows_saved_fr, rows_saved_nfr = 0, 0
+    if req.save_to_db:
+        if not req.project_id:
+            raise HTTPException(status_code=400, detail="project_id is required when save_to_db is true.")
+        try:
+            # Save FRs and NFRs
+            rows_saved_fr = save_functional_requirements(db, req.project_id, req.functional_requirements)
+            rows_saved_nfr = save_nfrs_statement_to_description(db, req.project_id, nfr_list)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"DB error: {e}")
+
+    # Attach storage summary to the response
+    result["_storage"] = {
+        "requested_save": req.save_to_db,
+        "project_id": req.project_id,
+        "rows_saved": {
+            "functional_requirements": rows_saved_fr,
+            "non_functional_requirements": rows_saved_nfr
+        }
+    }
+    return result
+
+
+@app.get("/requirements/{project_id}")
+def get_requirements(project_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve all Functional and Non-Functional Requirements for a given project.
+    :param project_id: UUID of the project
+    :param db: Database session
+    :return: Dict with functional and non-functional requirements
+    """
+    try:
+        frs = db_ops.get_functional_requirements_by_project(db, project_id)
+        nfrs = db_ops.get_non_functional_requirements_by_project(db, project_id)
+
+        return {
+            "project_id": project_id,
+            "functional_requirements": [
+                {"fr_id": fr.fr_id, "description": fr.description, "created_at": fr.created_at}
+                for fr in frs
+            ],
+            "non_functional_requirements": [
+                {"nfr_id": nfr.nfr_id, "category": nfr.category, "description": nfr.description,
+                 "created_at": nfr.created_at}
+                for nfr in nfrs
+            ],
+            "counts": {"functional": len(frs), "non_functional": len(nfrs)}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/projects")
+def get_unique_projects(db: Session = Depends(get_db)):
+    """
+    Retrieve all unique project IDs from the functional_requirements table.
+    :param db: Database session
+    :return: List of project IDs
+    """
+    try:
+        result = db.query(db_ops.FunctionalRequirement.project_id).distinct().all()
+        projects = [row.project_id for row in result]
+        return {"projects": projects, "count": len(projects)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+# (Optional) simple health check
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
+
+
 app.include_router(code_review_router, prefix="/agents")
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)

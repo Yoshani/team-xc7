@@ -1,11 +1,12 @@
 """
 CRUD operations for DB
 """
+from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import List, Dict, Any
 
-from sqlalchemy import Column, String, Integer, Text, DateTime, DECIMAL, ForeignKey, func
+from sqlalchemy import Column, String, Integer, Text, DateTime, DECIMAL, ForeignKey, func, text
 from sqlalchemy.orm import relationship, Session
 
 from .connection import Base, engine
@@ -58,13 +59,40 @@ class ReviewClassification(Base):
 
     review = relationship("CodeReviewSuggestion", back_populates="classifications")
 
+
+class FunctionalRequirement(Base):
+    __tablename__ = "functional_requirements"
+
+    fr_id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(String(36), nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class NonFunctionalRequirement(Base):
     __tablename__ = "non_functional_requirements"
 
-    nfr_id = Column(Integer, primary_key=True)
+    nfr_id = Column(Integer, primary_key=True, autoincrement=True)
     project_id = Column(String(36), nullable=False)
-    category = Column(String(100), nullable=False)
+    category = Column(String(100))
     description = Column(Text)
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+
+
+class RiskAssessment(Base):
+    __tablename__ = "risk_assessments"
+
+    risk_id = Column(Integer, primary_key=True, autoincrement=True)
+    commit_id = Column(String(36), ForeignKey("code_snapshots.commit_id"), nullable=False)
+    FR_completion_score = Column(DECIMAL(5, 2))
+    NFR_completion_score = Column(DECIMAL(5, 2))
+    compilation_rate = Column(DECIMAL(5, 2))
+    final_score = Column(DECIMAL(5, 2))
+    recommendation = Column(Text)
+    rationale = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+
+    snapshot = relationship("CodeSnapshot", backref="risk_assessments")
 
 # ==========================
 # Create tables (one-time init)
@@ -187,6 +215,201 @@ def get_all_classifications_with_snapshot_info(db: Session):
         .all()
     )
 
-def get_nfrs_for_project(db: Session, project_id: str):
-    """Fetches all NFRs for a given project."""
+
+def save_functional_requirements(db: Session, project_id: str, fr_list: list[str]) -> int:
+    """
+    Save a list of functional requirements for a given project ID.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :param fr_list: List of functional requirement titles/descriptions
+    :return: Number of rows inserted
+    """
+    count = 0
+    for fr in fr_list:
+        fr_obj = FunctionalRequirement(
+            project_id=project_id,
+            description=fr
+        )
+        db.add(fr_obj)
+        count += 1
+    db.commit()
+    return count
+
+
+def get_functional_requirements_by_project(db: Session, project_id: str):
+    """
+    Retrieves all functional requirements for a given project.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :return: List of FunctionalRequirement objects
+    """
+    return db.query(FunctionalRequirement).filter(FunctionalRequirement.project_id == project_id).all()
+
+
+def get_non_functional_requirements_by_project(db: Session, project_id: str):
+    """
+    Retrieves all non-functional requirements for a given project.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :return: List of NonFunctionalRequirement objects
+    """
     return db.query(NonFunctionalRequirement).filter(NonFunctionalRequirement.project_id == project_id).all()
+
+
+def create_risk_assessment(db: Session, commit_id: str, FR_score: float, NFR_score: float,
+                           compilation_rate: float, final_score: float,
+                           recommendation: str, rationale: str) -> RiskAssessment:
+    """
+    Creates and saves a new risk assessment entry.
+    :param db: SQLAlchemy session
+    :param commit_id: Associated commit ID
+    :param FR_score: Functional requirement completion score
+    :param NFR_score: Non-functional requirement completion score
+    :param compilation_rate: Compilation success rate
+    :param final_score: Final aggregated risk score
+    :param recommendation: System recommendation (e.g., 'Go', 'No-Go')
+    :param rationale: Explanation behind the decision
+    :return: Created RiskAssessment object
+    """
+    risk = RiskAssessment(
+        commit_id=commit_id,
+        FR_completion_score=FR_score,
+        NFR_completion_score=NFR_score,
+        compilation_rate=compilation_rate,
+        final_score=final_score,
+        recommendation=recommendation,
+        rationale=rationale
+    )
+    db.add(risk)
+    db.commit()
+    db.refresh(risk)
+    return risk
+
+
+def get_risk_assessments_by_project(db: Session, project_id: str):
+    """
+    Retrieves all risk assessments for a given project by joining code_snapshots.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :return: List of tuples (RiskAssessment, CodeSnapshot)
+    """
+    return (
+        db.query(RiskAssessment, CodeSnapshot)
+        .join(CodeSnapshot, CodeSnapshot.commit_id == RiskAssessment.commit_id)
+        .filter(CodeSnapshot.project_id == project_id)
+        .all()
+    )
+
+
+def _as_str(x) -> str:
+    if x is None:
+        return ""
+    if isinstance(x, (str, int, float)):
+        return str(x)
+    if isinstance(x, list):
+        return "\n".join(_as_str(i) for i in x if i is not None)
+    if isinstance(x, dict):
+        # Build a sensible text if we get a dict instead of a string:
+        # prefer "statement", else try a few common keys, else flatten.
+        for k in ("statement", "requirement", "description", "text", "spec", "content"):
+            if k in x and x[k]:
+                return _as_str(x[k])
+        parts = []
+        if "title" in x and x["title"]:
+            parts.append(str(x["title"]))
+        if "rationale" in x and x["rationale"]:
+            parts.append("Rationale: " + _as_str(x["rationale"]))
+        if "acceptance_criteria" in x and x["acceptance_criteria"]:
+            parts.append("Acceptance Criteria:\n" + _as_str(x["acceptance_criteria"]))
+        if "metrics" in x and x["metrics"]:
+            parts.append("Measures:\n" + _as_str(x["metrics"]))
+        if parts:
+            return "\n\n".join(parts)
+        return "\n".join(f"{k}: {v}" for k, v in x.items() if v is not None)
+    return str(x)
+
+
+def save_nfrs_statement_to_description(
+        db: Session, project_id: str, items: List[Dict[str, Any]]
+) -> int:
+    """
+    Persist NFRs into non_functional_requirements mapping:
+      description := item['statement']
+      category    := item.get('category')
+    Skips rows with empty/missing 'statement'.
+    """
+    if not items:
+        return 0
+
+    inserted = 0
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        statement = (it.get("statement") or "").strip()
+        if not statement:
+            continue
+        category = it.get("category")
+        if category is not None:
+            category = str(category)[:100]
+
+        db.execute(
+            text(
+                "INSERT INTO non_functional_requirements (project_id, category, description) "
+                "VALUES (:project_id, :category, :description)"
+            ),
+            {
+                "project_id": project_id,
+                "category": category,
+                "description": statement,
+            },
+        )
+        inserted += 1
+
+    if inserted:
+        db.commit()
+    return inserted
+
+
+def save_nfrs(db: Session, project_id: str, nfr_items: list[dict | str], *, skip_empty: bool = True) -> int:
+    """
+    Save NFRs into non_functional_requirements.
+    - Primary text comes from `statement`.
+    - Falls back gracefully to other fields if shape differs.
+    """
+    to_insert = []
+    for nfr in (nfr_items or []):
+        # CATEGORY
+        category = None
+        if isinstance(nfr, dict):
+            category = nfr.get("category") or nfr.get("type") or nfr.get("group") or None
+            if not category and isinstance(nfr.get("tags"), list) and nfr["tags"]:
+                category = str(nfr["tags"][0])
+            if category:
+                category = str(category)[:100]
+
+        # DESCRIPTION (use statement first!)
+        if isinstance(nfr, dict) and "statement" in nfr and nfr["statement"]:
+            description = _as_str(nfr["statement"])
+        else:
+            # fallback: try other keys or compose
+            description = _as_str(nfr)
+
+        description = (description or "").strip()
+
+        if skip_empty and not description:
+            continue
+
+        to_insert.append(
+            NonFunctionalRequirement(
+                project_id=project_id,
+                category=category,
+                description=description
+            )
+        )
+
+    if not to_insert:
+        return 0
+
+    db.add_all(to_insert)
+    db.commit()
+    return len(to_insert)

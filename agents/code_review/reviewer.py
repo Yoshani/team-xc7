@@ -1,5 +1,3 @@
-# In your file: agents/code_review/reviewer.py
-
 """
 agents/code_review/reviewer.py
 
@@ -32,20 +30,16 @@ def run_static_analysis(code: str, language: str) -> list:
     """Runs a basic linter on the given code and returns issues."""
     issues = []
     if language.lower() == "php":
-        # Create a temporary file to run the linter on
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.php', delete=False) as temp_file:
             temp_file.write(code)
             file_path = temp_file.name
         try:
-            # Run the PHP linter command
             subprocess.run(['php', '-l', file_path], capture_output=True, text=True, check=True)
         except subprocess.CalledProcessError as e:
-            # If the linter finds an error, capture it
             issues.append({"source": "php_linter", "error": e.stdout.strip()})
         except FileNotFoundError:
             issues.append({"source": "system_error", "error": "PHP command not found."})
         finally:
-            # Clean up the temporary file
             os.remove(file_path)
     return issues
 
@@ -86,18 +80,6 @@ def build_review_prompt(code: str, language: str, static_issues: list, nfrs: lis
     - "suggestion": (string) A clear, concise comment explaining the issue and how to fix it. This comment must reference the specific NFR if it's relevant.
     - "severity": (string) One of: "Low", "Medium", "High", or "Critical".
 
-    **Example Output:**
-    {{
-      "suggestions": [
-        {{
-          "line_start": 5,
-          "line_end": 5,
-          "suggestion": "Input validation is missing. To comply with security NFRs, please sanitize the '$userInput' variable before using it in a database query.",
-          "severity": "Critical"
-        }}
-      ]
-    }}
-
     Do NOT include any explanations or markdown fences in your response. Return ONLY the JSON object.
     """
 
@@ -106,25 +88,20 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
     """The main API endpoint for the Code Review Agent."""
     print(f"Code Review Agent: Received request for commit: {request.commit_id}")
 
-    # --- Step 1: Run static analysis. ---
     static_analysis_issues = run_static_analysis(request.code_text, request.language)
     print(f"Code Review Agent: Static analysis found {len(static_analysis_issues)} issues.")
 
-    # --- Step 2: Fetch context (NFRs) from the database. ---
-    project_nfrs = db_ops.get_nfrs_for_project(db, request.project_id)
+    project_nfrs = db_ops.get_non_functional_requirements_by_project(db, request.project_id)
     print(f"Code Review Agent: Found {len(project_nfrs)} NFRs for context.")
 
-    # --- Step 3: Build the prompt and call the AI. ---
     prompt = build_review_prompt(request.code_text, request.language, static_analysis_issues, project_nfrs)
     raw_llm_output = get_llm_completion(prompt)
     print("Code Review Agent: Received response from LLM.")
 
-    # Parse the AI's JSON response safely.
     parsed_output = safe_json_parse(raw_llm_output)
     llm_suggestions = parsed_output.get("suggestions", [])
     print(f"Code Review Agent: LLM generated {len(llm_suggestions)} suggestions.")
 
-    # --- Step 4: Save the AI's suggestions to the database. ---
     saved_suggestions_ids = []
     for suggestion in llm_suggestions:
         new_suggestion = db_ops.create_review(
@@ -138,7 +115,6 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
         saved_suggestions_ids.append(new_suggestion.review_id)
     print(f"Code Review Agent: Successfully saved {len(saved_suggestions_ids)} suggestions to the database.")
 
-    # --- Step 5: Return the findings. ---
     return {
         "message": "Code review analysis complete.",
         "commit_id": request.commit_id,
@@ -146,3 +122,4 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
         "llm_review_suggestions": llm_suggestions,
         "saved_review_ids": saved_suggestions_ids
     }
+

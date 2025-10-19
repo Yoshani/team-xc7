@@ -26,6 +26,25 @@ def fetch_prod_metrics():
     return requests.get("http://localhost:8000/generate_metrics").json()
 
 
+@st.cache_data(ttl=300)
+def fetch_projects():
+    """Fetch unique project IDs from backend."""
+    res = requests.get("http://localhost:8000/projects")
+    if res.status_code == 200:
+        data = res.json()
+        return data.get("projects", [])
+    return []
+
+
+@st.cache_data(ttl=300)
+def fetch_requirements(project_id: str):
+    """Fetch requirements for a given project."""
+    res = requests.get(f"http://localhost:8000/requirements/{project_id}")
+    if res.status_code == 200:
+        return res.json()
+    return {"functional_requirements": [], "non_functional_requirements": []}
+
+
 # ---------- Page Config ----------
 st.set_page_config(page_title="Dev Productivity Dashboard", layout="wide")
 
@@ -35,14 +54,10 @@ prod_metrics_data = fetch_prod_metrics()
 # Dummy data for risk & requirements endpoints
 risk_data = {
     "risk_score": "Medium",
-    "release_decision": "Conditional",
+    "release_decision": "GO",
     "fr_completion_rate": 0.85,
     "nfr_completion_rate": 0.75,
     "compilation_success_rate": 0.9
-}
-requirements_data = {
-    "functional_requirements": ["Login system implemented", "Export feature pending"],
-    "non_functional_requirements": ["95% test coverage", "API latency under 200ms"]
 }
 
 # -------- Title --------
@@ -51,25 +66,32 @@ st.markdown('<div class="title">Productivity Dashboard</div>', unsafe_allow_html
 # -------- Project Risks & Readiness --------
 st.header("🚨️ Project Risks & Release Readiness")
 
+projects = fetch_projects()
+if not projects:
+    st.error("No projects found in the database.")
+    st.stop()
+
+selected_project = st.selectbox("Select a Project", projects, index=len(projects) - 1)
+requirements_data = fetch_requirements(selected_project)
+
 # ----- Release Decision -----
 decision = risk_data["release_decision"]
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    color_map = {
-        "Go": "#28a745",
-        "No-Go": "#dc3545",
-        "Conditional": "#fd7e14"
-    }
+    color_class = decision.lower().replace("-", "")
     emoji_map = {
         "Go": "✅",
         "No-Go": "❌",
         "Conditional": "⚠️"
     }
-    bg = color_map.get(decision, "#6c757d")
     emoji = emoji_map.get(decision, "")
     st.markdown(
-        f"<div class='metric-card' style='background-color:{bg}; font-size:24px; text-align: center;'>{emoji}<br>Release Decision: {decision.upper()}</div>",
+        f"""
+        <div class="metric-card decision {color_class}">
+            Release Decision: {decision.upper()}
+        </div>
+        """,
         unsafe_allow_html=True
     )
 
@@ -90,21 +112,33 @@ for name, value in metrics.items():
 
 # ----- Functional Requirements -----
 st.markdown("### 📑 Functional Requirements")
-st.markdown(
-    "<div class='metric-card'><ul class='requirements-list'>" +
-    "".join(f"<li>{fr}</li>" for fr in requirements_data["functional_requirements"]) +
-    "</ul></div>",
-    unsafe_allow_html=True
-)
+if requirements_data["functional_requirements"]:
+    st.markdown(
+        "<div class='metric-card'><ul class='requirements-list'>" +
+        "".join(
+            f"<li>{fr['description']}</li>"
+            for fr in requirements_data["functional_requirements"]
+        ) +
+        "</ul></div>",
+        unsafe_allow_html=True
+    )
+else:
+    st.info("No functional requirements found for this project.")
 
 # ----- Non-Functional Requirements -----
 st.markdown("### ⚙️ Non-Functional Requirements")
-st.markdown(
-    "<div class='metric-card'><ul class='requirements-list'>" +
-    "".join(f"<li>{nfr}</li>" for nfr in requirements_data["non_functional_requirements"]) +
-    "</ul></div>",
-    unsafe_allow_html=True
-)
+if requirements_data["non_functional_requirements"]:
+    st.markdown(
+        "<div class='metric-card'><ul class='requirements-list'>" +
+        "".join(
+            f"<li><b>{nfr['category']}:</b> {nfr['description']}</li>"
+            for nfr in requirements_data["non_functional_requirements"]
+        ) +
+        "</ul></div>",
+        unsafe_allow_html=True
+    )
+else:
+    st.info("No non-functional requirements found for this project.")
 
 # ----- Team Metrics -----
 team_metrics = prod_metrics_data["team_productivity_metrics"]
