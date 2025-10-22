@@ -83,6 +83,7 @@ class RiskAssessment(Base):
     __tablename__ = "risk_assessments"
 
     risk_id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(String(36), nullable=False)
     commit_id = Column(String(36), ForeignKey("code_snapshots.commit_id"), nullable=False)
     FR_completion_score = Column(DECIMAL(5, 2))
     NFR_completion_score = Column(DECIMAL(5, 2))
@@ -257,15 +258,16 @@ def get_non_functional_requirements_by_project(db: Session, project_id: str):
     return db.query(NonFunctionalRequirement).filter(NonFunctionalRequirement.project_id == project_id).all()
 
 
-def create_risk_assessment(db: Session, commit_id: str, FR_score: float, NFR_score: float,
+def create_risk_assessment(db: Session, project_id: str, commit_id: str, fr_score: float, nfr_score: float,
                            compilation_rate: float, final_score: float,
                            recommendation: str, rationale: str) -> RiskAssessment:
     """
     Creates and saves a new risk assessment entry.
     :param db: SQLAlchemy session
+    :param project_id: Associated project ID
     :param commit_id: Associated commit ID
-    :param FR_score: Functional requirement completion score
-    :param NFR_score: Non-functional requirement completion score
+    :param fr_score: Functional requirement completion score
+    :param nfr_score: Non-functional requirement completion score
     :param compilation_rate: Compilation success rate
     :param final_score: Final aggregated risk score
     :param recommendation: System recommendation (e.g., 'Go', 'No-Go')
@@ -273,9 +275,10 @@ def create_risk_assessment(db: Session, commit_id: str, FR_score: float, NFR_sco
     :return: Created RiskAssessment object
     """
     risk = RiskAssessment(
+        project_id=project_id,
         commit_id=commit_id,
-        FR_completion_score=FR_score,
-        NFR_completion_score=NFR_score,
+        FR_completion_score=fr_score,
+        NFR_completion_score=nfr_score,
         compilation_rate=compilation_rate,
         final_score=final_score,
         recommendation=recommendation,
@@ -292,13 +295,28 @@ def get_risk_assessments_by_project(db: Session, project_id: str):
     Retrieves all risk assessments for a given project by joining code_snapshots.
     :param db: SQLAlchemy session
     :param project_id: Project UUID
-    :return: List of tuples (RiskAssessment, CodeSnapshot)
+    :return: Latest RiskAssessment object or None if not found
     """
     return (
-        db.query(RiskAssessment, CodeSnapshot)
-        .join(CodeSnapshot, CodeSnapshot.commit_id == RiskAssessment.commit_id)
+        db.query(RiskAssessment)
+        .filter(RiskAssessment.project_id == project_id)
+        .order_by(RiskAssessment.created_at.desc())
+        .first()
+    )
+
+
+def get_latest_snapshot_by_project(db: Session, project_id: str) -> CodeSnapshot | None:
+    """
+    Fetches the most recent code snapshot for a given project.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :return: Latest CodeSnapshot object or None if not found
+    """
+    return (
+        db.query(CodeSnapshot)
         .filter(CodeSnapshot.project_id == project_id)
-        .all()
+        .order_by(CodeSnapshot.created_at.desc())
+        .first()
     )
 
 

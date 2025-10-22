@@ -2,4 +2,8 @@ sqlalchemy~=2.0.43
 connection~=2021.7.20
 groq~=0.32.0
 fastapi~=0.117.1
+plotly==6.3.1
 pydantic~=2.11.9
+PyMySQL==1.1.2
+streamlit==1.50.0
+uvicorn==0.38.0

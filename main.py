@@ -7,16 +7,25 @@ from starlette.concurrency import run_in_threadpool
 
 from agents.prod_metrics.classify_reviews import classify_commits
 from agents.prod_metrics.generate_metrics import calculate_metrics
+from agents.risk_control.risk_agent import calculate_risk
 from db.connection import get_db
 from db import db_operations as db_ops
 from db.db_operations import save_nfrs_statement_to_description, save_functional_requirements
 
 from agents.nfr_agent.engine import NFRGenerator
 
-try:
-    from agents.nfr_agent.engine import DEFAULT_MODEL
-except Exception:
-    DEFAULT_MODEL = None
+TIMEOUT_SECONDS = 45  # fail fast instead of hanging forever
+DEFAULT_MODEL = "llama-3.1-8b-instant"
+app = FastAPI()
+
+
+# ---------- Request schema ----------
+class SnapshotRequest(BaseModel):
+    parent_commit_id: str
+    project_id: str
+    developer_name: str
+    code_text: str
+    language: str
 
 
 class GenerateNFRRequest(BaseModel):
@@ -27,17 +36,8 @@ class GenerateNFRRequest(BaseModel):
     save_to_db: bool = False
 
 
-TIMEOUT_SECONDS = 45  # fail fast instead of hanging forever
-
-app = FastAPI()
-
-
-# ---------- Request schema ----------
-class SnapshotRequest(BaseModel):
-    parent_commit_id: str
+class RiskAssessmentRequest(BaseModel):
     project_id: str
-    developer_name: str
-    code_text: str
     language: str
 
 
@@ -184,6 +184,49 @@ def get_unique_projects(db: Session = Depends(get_db)):
         result = db.query(db_ops.FunctionalRequirement.project_id).distinct().all()
         projects = [row.project_id for row in result]
         return {"projects": projects, "count": len(projects)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/assess-risks")
+def assess_risks(req: RiskAssessmentRequest, db: Session = Depends(get_db)):
+    """
+    Perform a full risk assessment for the given project.
+    :param req: Request containing project_id and language
+    :param db: Database session
+    :return: Dict with risk level, FR/NFR completion, compilation success, etc.
+    """
+    try:
+        result = calculate_risk(db, req.project_id, req.language)
+        return {
+            "project_id": req.project_id,
+            "language": req.language,
+            "risk_assessment": result
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Risk assessment failed: {e}")
+
+
+@app.get("/risks/{project_id}")
+def get_requirements(project_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieves the latest risk assessment for a given project.
+    :param project_id: UUID of the project
+    :param db: Database session
+    :return: Dict with risk assessment details
+    """
+    try:
+        risks = db_ops.get_risk_assessments_by_project(db, project_id)
+        return {
+            "project_id": project_id,
+            "risk_score": risks.final_score,
+            "release_decision": risks.recommendation,
+            "fr_completion_rate": risks.FR_completion_score,
+            "nfr_completion_rate": risks.NFR_completion_score,
+            "compilation_success_rate": risks.compilation_rate
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 

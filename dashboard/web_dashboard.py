@@ -45,20 +45,20 @@ def fetch_requirements(project_id: str):
     return {"functional_requirements": [], "non_functional_requirements": []}
 
 
+@st.cache_data(ttl=300)
+def fetch_risk_assessment(project_id: str):
+    """
+    Fetch risk assessment metrics from the backend API.
+    :return: Risk assessment metrics JSON
+    """
+    return requests.get(f"http://localhost:8000/risks/{project_id}").json()
+
+
 # ---------- Page Config ----------
 st.set_page_config(page_title="Dev Productivity Dashboard", layout="wide")
 
 # -------- Fetch Data --------
 prod_metrics_data = fetch_prod_metrics()
-
-# Dummy data for risk & requirements endpoints
-risk_data = {
-    "risk_score": "Medium",
-    "release_decision": "GO",
-    "fr_completion_rate": 0.85,
-    "nfr_completion_rate": 0.75,
-    "compilation_success_rate": 0.9
-}
 
 # -------- Title --------
 st.markdown('<div class="title">Productivity Dashboard</div>', unsafe_allow_html=True)
@@ -73,19 +73,15 @@ if not projects:
 
 selected_project = st.selectbox("Select a Project", projects, index=len(projects) - 1)
 requirements_data = fetch_requirements(selected_project)
+risk_data = fetch_risk_assessment(selected_project)
 
 # ----- Release Decision -----
 decision = risk_data["release_decision"]
+decision_map = {"Release": "go", "Do Not Release": "nogo", "Conditionally Release": "conditional"}
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    color_class = decision.lower().replace("-", "")
-    emoji_map = {
-        "Go": "✅",
-        "No-Go": "❌",
-        "Conditional": "⚠️"
-    }
-    emoji = emoji_map.get(decision, "")
+    color_class = decision_map.get(decision, "unknown")
     st.markdown(
         f"""
         <div class="metric-card decision {color_class}">
