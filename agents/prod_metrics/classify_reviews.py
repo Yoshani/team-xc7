@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from agents.prod_metrics.constants import REVIEW_CATEGORIES, CLASSIFICATION_ACCEPTED, CLASSIFICATION_MODIFIED, \
     CLASSIFICATION_REJECTED
-from agents.prod_metrics.llm_agent import get_llm_completion
+from util.llm_agent import get_llm_completion
 from db import db_operations as db_ops
 from db.db_operations import CodeSnapshot, CodeReviewSuggestion
 

@@ -10,7 +10,7 @@ import time
 from sqlalchemy.orm import Session
 
 from agents.prod_metrics.constants import CLASSIFICATION_ACCEPTED, CLASSIFICATION_MODIFIED, CLASSIFICATION_REJECTED
-from agents.prod_metrics.llm_agent import get_llm_completion
+from util.llm_agent import get_llm_completion
 from db import db_operations as db_ops
 from util.helper import safe_json_parse
 

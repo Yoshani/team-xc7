@@ -92,6 +92,7 @@ CREATE TABLE review_classifications
 CREATE TABLE risk_assessments
 (
     risk_id              INT AUTO_INCREMENT PRIMARY KEY,
+    project_id           CHAR(36) NOT NULL,
     commit_id            CHAR(36) NOT NULL,
     FR_completion_score  DECIMAL(5, 2),
     NFR_completion_score DECIMAL(5, 2),
