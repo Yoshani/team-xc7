@@ -21,8 +21,9 @@ app = FastAPI()
 
 # ---------- Request schema ----------
 class SnapshotRequest(BaseModel):
-    parent_commit_id: str
     project_id: str
+    commit_id: str
+    parent_commit_id: str
     developer_name: str
     code_text: str
     language: str
@@ -54,6 +55,7 @@ async def classify_snapshot(snapshot: SnapshotRequest, db: Session = Depends(get
     merged_snapshot = db_ops.create_snapshot(
         db,
         project_id=snapshot.project_id,
+        commit_id=snapshot.commit_id,
         parent_commit_id=snapshot.parent_commit_id,
         developer_name=snapshot.developer_name,
         code_text=snapshot.code_text,
@@ -181,8 +183,8 @@ def get_unique_projects(db: Session = Depends(get_db)):
     :return: List of project IDs
     """
     try:
-        result = db.query(db_ops.FunctionalRequirement.project_id).distinct().all()
-        projects = [row.project_id for row in result]
+        result = db.query(db_ops.Project.project_id, db_ops.Project.name).all()
+        projects = [{"project_id": row.project_id, "name": row.name} for row in result]
         return {"projects": projects, "count": len(projects)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")

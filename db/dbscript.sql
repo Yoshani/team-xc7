@@ -5,13 +5,23 @@
 -- Compatible with MariaDB
 -- =========================================
 
+-- Table: Projects
+CREATE TABLE projects
+(
+    project_id CHAR(36) PRIMARY KEY,
+    name       VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Table: Functional_Requirements
 CREATE TABLE functional_requirements
 (
     fr_id       INT AUTO_INCREMENT PRIMARY KEY,
     project_id  CHAR(36) NOT NULL,
     description TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects (project_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- Table: Non_Functional_Requirements
@@ -21,7 +31,9 @@ CREATE TABLE non_functional_requirements
     project_id  CHAR(36)     NOT NULL,
     category    VARCHAR(100) NOT NULL,
     description TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects (project_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- Table: Embeddings
@@ -54,7 +66,9 @@ CREATE TABLE code_snapshots
     developer_name   VARCHAR(100) NOT NULL,
     code_text        LONGTEXT     NOT NULL,
     language         VARCHAR(50)  NOT NULL,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects (project_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- Table: Code_Review_Suggestions
@@ -101,6 +115,8 @@ CREATE TABLE risk_assessments
     recommendation       TEXT,
     rationale            TEXT,
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects (project_id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (commit_id) REFERENCES code_snapshots (commit_id)
         ON DELETE CASCADE ON UPDATE CASCADE
 );

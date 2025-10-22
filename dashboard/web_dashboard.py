@@ -66,17 +66,24 @@ st.markdown('<div class="title">Productivity Dashboard</div>', unsafe_allow_html
 # -------- Project Risks & Readiness --------
 st.header("🚨️ Project Risks & Release Readiness")
 
-projects = fetch_projects()
-if not projects:
+projects_data = fetch_projects()
+if not projects_data:
     st.error("No projects found in the database.")
     st.stop()
 
-selected_project = st.selectbox("Select a Project", projects, index=len(projects) - 1)
-requirements_data = fetch_requirements(selected_project)
-risk_data = fetch_risk_assessment(selected_project)
+# Map names to IDs for dropdown display
+project_name_to_id = {proj["name"]: proj["project_id"] for proj in projects_data}
+project_names = list(project_name_to_id.keys())
+
+selected_project_name = st.selectbox("Select a Project", project_names, index=0)
+selected_project_id = project_name_to_id[selected_project_name]
+
+# Fetch requirements and risk using project_id
+requirements_data = fetch_requirements(selected_project_id)
+risk_data = fetch_risk_assessment(selected_project_id)
 
 # ----- Release Decision -----
-decision = risk_data["release_decision"]
+decision = risk_data.get("release_decision", "Not Calculated Yet")
 decision_map = {"Release": "go", "Do Not Release": "nogo", "Conditionally Release": "conditional"}
 col1, col2, col3 = st.columns([1, 2, 1])
 
@@ -95,9 +102,9 @@ with col2:
 st.markdown("### 📊 Risk Metrics")
 
 metrics = {
-    "FR Completion": risk_data["fr_completion_rate"],
-    "NFR Completion": risk_data["nfr_completion_rate"],
-    "Compilation Success": risk_data["compilation_success_rate"]
+    "FR Completion": risk_data.get("fr_completion_rate", 0),
+    "NFR Completion": risk_data.get("nfr_completion_rate", 0),
+    "Compilation Success": risk_data.get("compilation_success_rate", 0),
 }
 
 for name, value in metrics.items():

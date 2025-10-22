@@ -16,6 +16,14 @@ from .connection import Base, engine
 # Models
 # ==========================
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    project_id = Column(String(36), primary_key=True)
+    name = Column(String(255), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class CodeSnapshot(Base):
     __tablename__ = "code_snapshots"
 
@@ -108,9 +116,8 @@ def init_db():
 # ==========================
 
 # --- Snapshots ---
-def create_snapshot(db: Session, project_id: str, parent_commit_id: str,
+def create_snapshot(db: Session, project_id: str, commit_id: str, parent_commit_id: str,
                     developer_name: str, code_text: str, language: str) -> CodeSnapshot:
-    commit_id = str(uuid.uuid4())
     snapshot = CodeSnapshot(
         commit_id=commit_id,
         project_id=project_id,
