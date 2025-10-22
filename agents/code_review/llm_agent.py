@@ -1,4 +1,3 @@
-import traceback # Import added for detailed error reporting
 from groq import Groq
 from tdp_secrets import GROQ_API_KEY
 
@@ -23,18 +22,11 @@ def get_llm_completion(prompt: str):
              return completion.choices[0].message.content.strip()
         else:
             # Handle unexpected response structure
-            print("!!!!!!!!!!!!!! UNEXPECTED GROQ API RESPONSE STRUCTURE !!!!!!!!!!!!!!")
-            print(f"Response Object: {completion}")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print(f"Unexpected Groq API response structure: {completion}")
             return '{"suggestions": []}' # Fallback empty JSON
 
     except Exception as e:
-        # --- DEBUGGING ADDED HERE ---
-        print(f"!!!!!!!!!!!!!! ERROR CALLING GROQ API !!!!!!!!!!!!!!")
-        print(f"Error Type: {type(e).__name__}")
-        print(f"Error Details: {e}")
-        traceback.print_exc() # Prints the full stack trace
-        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        # --- END DEBUGGING ---
+        # Keep a simple error message for logging
+        print(f"Error calling Groq API: {e}")
         return '{"suggestions": []}' # Keep the fallback
 
