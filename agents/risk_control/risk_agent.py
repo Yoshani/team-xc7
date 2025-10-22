@@ -105,14 +105,10 @@ def classify_risk_level(score: float) -> str:
 def calculate_risk(db: Session, project_id: str, language: str) -> Dict:
     """
     Performs end-to-end risk assessment for the given project.
-
-    Steps:
-        1. Get latest code snapshot
-        2. Retrieve FRs/NFRs
-        3. LLM-based compilation success rate
-        4. LLM-based FR/NFR completion analysis
-        5. Compute overall risk score
-        6. Save assessment and return results
+    :param db: Database session
+    :param project_id: UUID of the project
+    :param language: Programming language of the project
+    :return: Dict with risk assessment results
     """
 
     # Retrieve latest code snapshot and requirements
@@ -127,32 +123,13 @@ def calculate_risk(db: Session, project_id: str, language: str) -> Dict:
     if not fr_list and not nfr_list:
         raise ValueError(f"No requirements (FR/NFR) found for project {project_id}.")
 
-    # Compilation success estimation (via LLM)
-    compilation_prompt = build_compilation_prompt(current_snapshot.code_text, language)
-    compilation_output = get_llm_completion(compilation_prompt)
-    try:
-        comp_parsed = json.loads(compilation_output)
-        compilation_success_rate = float(comp_parsed.get("compilation_success_rate", 0.0))
-        comp_confidence = float(comp_parsed.get("confidence", 0.0))
-        comp_rationale = comp_parsed.get("rationale", "")
-    except Exception as e:
-        print(f"LLM compilation parsing error: {compilation_output[:200]} | error={e}")
-        compilation_success_rate = comp_confidence = 0.0
-        comp_rationale = f"Parsing error: {e}"
+    # Compilation success estimation
+    comp_confidence, comp_rationale, compilation_success_rate = get_compilation_success_scores(
+        current_snapshot, language)
 
     # LLM-based FR/NFR completion analysis
-    fr_prompt = build_fr_nfr_prompt(current_snapshot.code_text, fr_list, nfr_list)
-    raw_output = get_llm_completion(fr_prompt)
-    try:
-        req_parsed = json.loads(raw_output)
-        fr_completion_rate = float(req_parsed.get("fr_completion_rate", 0.0))
-        nfr_completion_rate = float(req_parsed.get("nfr_completion_rate", 0.0))
-        req_confidence = float(req_parsed.get("confidence", 0.0))
-        req_rationale = req_parsed.get("rationale", "")
-    except Exception as e:
-        print(f"LLM FR/NFR parsing error: {raw_output[:200]} | error={e}")
-        fr_completion_rate = nfr_completion_rate = req_confidence = 0.0
-        req_rationale = f"Parsing error: {e}"
+    fr_completion_rate, nfr_completion_rate, req_confidence, req_rationale = get_requirement_coverage_scores(
+        current_snapshot, fr_list, nfr_list)
 
     # Risk computation
     risk_numeric = (
@@ -202,3 +179,47 @@ def calculate_risk(db: Session, project_id: str, language: str) -> Dict:
     )
 
     return risk_data
+
+
+def get_compilation_success_scores(current_snapshot, language):
+    """
+    Uses LLM to estimate compilation success likelihood.
+    :param current_snapshot: CodeSnapshot object
+    :param language: Programming language of the code
+    :return: Tuple(confidence, rationale, compilation_success_rate)
+    """
+    compilation_prompt = build_compilation_prompt(current_snapshot.code_text, language)
+    compilation_output = get_llm_completion(compilation_prompt)
+    try:
+        comp_parsed = json.loads(compilation_output)
+        compilation_success_rate = float(comp_parsed.get("compilation_success_rate", 0.0))
+        comp_confidence = float(comp_parsed.get("confidence", 0.0))
+        comp_rationale = comp_parsed.get("rationale", "")
+    except Exception as e:
+        print(f"LLM compilation parsing error: {compilation_output[:200]} | error={e}")
+        compilation_success_rate = comp_confidence = 0.0
+        comp_rationale = f"Parsing error: {e}"
+    return comp_confidence, comp_rationale, compilation_success_rate
+
+
+def get_requirement_coverage_scores(current_snapshot, fr_list, nfr_list):
+    """
+    Uses LLM to estimate FR/NFR completion rates.
+    :param current_snapshot: CodeSnapshot object
+    :param fr_list: List of functional requirements
+    :param nfr_list: List of non-functional requirements
+    :return: Tuple(fr_completion_rate, nfr_completion_rate, confidence, rationale)
+    """
+    fr_prompt = build_fr_nfr_prompt(current_snapshot.code_text, fr_list, nfr_list)
+    raw_output = get_llm_completion(fr_prompt)
+    try:
+        req_parsed = json.loads(raw_output)
+        fr_completion_rate = float(req_parsed.get("fr_completion_rate", 0.0))
+        nfr_completion_rate = float(req_parsed.get("nfr_completion_rate", 0.0))
+        req_confidence = float(req_parsed.get("confidence", 0.0))
+        req_rationale = req_parsed.get("rationale", "")
+    except Exception as e:
+        print(f"LLM FR/NFR parsing error: {raw_output[:200]} | error={e}")
+        fr_completion_rate = nfr_completion_rate = req_confidence = 0.0
+        req_rationale = f"Parsing error: {e}"
+    return fr_completion_rate, nfr_completion_rate, req_confidence, req_rationale
