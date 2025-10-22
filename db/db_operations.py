@@ -103,7 +103,6 @@ class RiskAssessment(Base):
 
     snapshot = relationship("CodeSnapshot", backref="risk_assessments")
 
-
 # ==========================
 # Create tables (one-time init)
 # ==========================

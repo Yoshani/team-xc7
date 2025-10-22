@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from agents.prod_metrics.classify_reviews import classify_commits
 from agents.prod_metrics.generate_metrics import calculate_metrics
 from agents.risk_control.risk_agent import calculate_risk
+from agents.code_review.reviewer import router as code_review_router
 from db.connection import get_db
 from db import db_operations as db_ops
 from db.db_operations import save_nfrs_statement_to_description, save_functional_requirements
@@ -238,6 +239,8 @@ def get_requirements(project_id: str, db: Session = Depends(get_db)):
 def healthz():
     return {"ok": True}
 
+
+app.include_router(code_review_router, prefix="/agents")
 
 if __name__ == "__main__":
     import uvicorn
