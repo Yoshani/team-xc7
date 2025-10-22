@@ -1,11 +1,10 @@
+import traceback # Import added for detailed error reporting
 from groq import Groq
 from tdp_secrets import GROQ_API_KEY
 
-# We are choosing a more powerful model for the complex task of code review.
-# Llama3-70b is one of the best available models on Groq for reasoning.
-LLM_MODEL = "llama3-70b-8192"
-LLM_TEMPERATURE = 0.2  # We want creative but still factual suggestions
-LLM_MAX_TOKENS = 1024  # Give it enough space for detailed suggestions
+LLM_MODEL = "llama-3.3-70b-versatile"
+LLM_TEMPERATURE = 0.2
+LLM_MAX_TOKENS = 1024
 
 client = Groq(api_key=GROQ_API_KEY)
 
@@ -19,7 +18,23 @@ def get_llm_completion(prompt: str):
             max_tokens=LLM_MAX_TOKENS,
             stream=False,
         )
-        return completion.choices[0].message.content.strip()
+        # Check if the response structure is as expected
+        if completion.choices and completion.choices[0].message:
+             return completion.choices[0].message.content.strip()
+        else:
+            # Handle unexpected response structure
+            print("!!!!!!!!!!!!!! UNEXPECTED GROQ API RESPONSE STRUCTURE !!!!!!!!!!!!!!")
+            print(f"Response Object: {completion}")
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            return '{"suggestions": []}' # Fallback empty JSON
+
     except Exception as e:
-        print(f"Error calling Groq API: {e}")
-        return '{"suggestions": []}' # Return empty JSON on error
+        # --- DEBUGGING ADDED HERE ---
+        print(f"!!!!!!!!!!!!!! ERROR CALLING GROQ API !!!!!!!!!!!!!!")
+        print(f"Error Type: {type(e).__name__}")
+        print(f"Error Details: {e}")
+        traceback.print_exc() # Prints the full stack trace
+        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        # --- END DEBUGGING ---
+        return '{"suggestions": []}' # Keep the fallback
+

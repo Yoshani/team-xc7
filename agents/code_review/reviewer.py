@@ -2,8 +2,7 @@
 agents/code_review/reviewer.py
 
 This module contains the fully functional core logic for the Code Review Agent.
-It fetches context from the database, runs static analysis, calls the LLM (Groq)
-for an intelligent review, and saves the structured suggestions.
+Includes debugging print statements for diagnosing LLM issues.
 """
 
 import subprocess
@@ -15,14 +14,16 @@ from sqlalchemy.orm import Session
 
 from db.connection import get_db
 from db import db_operations as db_ops
+# Import from the modified llm_agent.py in the same directory
 from .llm_agent import get_llm_completion
 from util.helper import safe_json_parse
 
 router = APIRouter()
 
 class CodeReviewRequest(BaseModel):
-    commit_id: str
+    parent_commit_id: str
     project_id: str
+    developer_name: str
     code_text: str
     language: str
 
@@ -40,7 +41,9 @@ def run_static_analysis(code: str, language: str) -> list:
         except FileNotFoundError:
             issues.append({"source": "system_error", "error": "PHP command not found."})
         finally:
-            os.remove(file_path)
+            # Clean up the temporary file, ensuring it exists before removal
+            if os.path.exists(file_path):
+                os.remove(file_path)
     return issues
 
 def build_review_prompt(code: str, language: str, static_issues: list, nfrs: list) -> str:
@@ -48,6 +51,7 @@ def build_review_prompt(code: str, language: str, static_issues: list, nfrs: lis
     nfr_list_str = "\n".join([f"- {nfr.category}: {nfr.description}" for nfr in nfrs]) if nfrs else "No NFRs provided."
     static_issues_str = "\n".join([f"- {issue['source']}: {issue.get('error', issue.get('message'))}" for issue in static_issues]) if static_issues else "No issues found by static analysis."
 
+    # Prompt remains the same as before
     return f"""
     You are an expert Senior Software Developer acting as an automated code reviewer.
     Your task is to provide helpful, structured code review suggestions for the given code snippet.
@@ -57,8 +61,7 @@ def build_review_prompt(code: str, language: str, static_issues: list, nfrs: lis
     2. Consider the project's Non-Functional Requirements (NFRs) listed below.
     3. Consider the results from the basic static analysis tools.
     4. Identify potential bugs, security vulnerabilities, performance issues, or style violations.
-    5. For each issue you find, provide a clear suggestion for how to fix it.
-    6. Return your findings as a JSON object containing a list of suggestions.
+    5. Return your findings as a JSON object containing a list of suggestions.
 
     **Project Context:**
     - Language: {language}
@@ -74,19 +77,29 @@ def build_review_prompt(code: str, language: str, static_issues: list, nfrs: lis
 
     **Output Format:**
     Return ONLY a single, valid JSON object with a single key "suggestions".
-    The value of "suggestions" should be a list of objects, where each object has the following fields:
+    The value of "suggestions" should be a list of objects with the following fields:
     - "line_start": (integer) The starting line number of the issue.
     - "line_end": (integer) The ending line number of the issue.
-    - "suggestion": (string) A clear, concise comment explaining the issue and how to fix it. This comment must reference the specific NFR if it's relevant.
+    - "suggestion": (string) A clear, concise comment explaining the issue and how to fix it.
     - "severity": (string) One of: "Low", "Medium", "High", or "Critical".
 
-    Do NOT include any explanations or markdown fences in your response. Return ONLY the JSON object.
+    Do NOT include any explanations or markdown fences in your response.
     """
 
 @router.post("/review", tags=["Code Review"])
 def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db)):
     """The main API endpoint for the Code Review Agent."""
-    print(f"Code Review Agent: Received request for commit: {request.commit_id}")
+    print(f"Code Review Agent: Received request based on parent commit: {request.parent_commit_id}")
+
+    new_snapshot = db_ops.create_snapshot(
+        db=db,
+        project_id=request.project_id,
+        parent_commit_id=request.parent_commit_id,
+        developer_name=request.developer_name,
+        code_text=request.code_text,
+        language=request.language
+    )
+    print(f"Code Review Agent: Successfully created new snapshot with commit_id: {new_snapshot.commit_id}")
 
     static_analysis_issues = run_static_analysis(request.code_text, request.language)
     print(f"Code Review Agent: Static analysis found {len(static_analysis_issues)} issues.")
@@ -98,17 +111,33 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
     raw_llm_output = get_llm_completion(prompt)
     print("Code Review Agent: Received response from LLM.")
 
+    # --- DEBUGGING ADDED HERE ---
+    print(f"---- RAW LLM OUTPUT ----\n{raw_llm_output}\n------------------------")
+    # --- END DEBUGGING ---
+
     parsed_output = safe_json_parse(raw_llm_output)
     llm_suggestions = parsed_output.get("suggestions", [])
     print(f"Code Review Agent: LLM generated {len(llm_suggestions)} suggestions.")
 
     saved_suggestions_ids = []
     for suggestion in llm_suggestions:
+        # Ensure line_start and line_end are integers or None
+        line_start = suggestion.get("line_start")
+        line_end = suggestion.get("line_end")
+        try:
+            line_start = int(line_start) if line_start is not None else None
+        except (ValueError, TypeError):
+            line_start = None # Default to None if conversion fails
+        try:
+            line_end = int(line_end) if line_end is not None else None
+        except (ValueError, TypeError):
+             line_end = None # Default to None if conversion fails
+
         new_suggestion = db_ops.create_review(
             db=db,
-            commit_id=request.commit_id,
-            line_start=suggestion.get("line_start"),
-            line_end=suggestion.get("line_end"),
+            commit_id=new_snapshot.commit_id,
+            line_start=line_start,
+            line_end=line_end,
             suggestion=suggestion.get("suggestion", "N/A"),
             severity=suggestion.get("severity", "Medium")
         )
@@ -117,7 +146,7 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
 
     return {
         "message": "Code review analysis complete.",
-        "commit_id": request.commit_id,
+        "new_commit_id": new_snapshot.commit_id,
         "static_analysis_results": static_analysis_issues,
         "llm_review_suggestions": llm_suggestions,
         "saved_review_ids": saved_suggestions_ids
