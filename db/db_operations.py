@@ -3,7 +3,6 @@ CRUD operations for DB
 """
 from __future__ import annotations
 
-import uuid
 from typing import List, Dict, Any
 
 from sqlalchemy import Column, String, Integer, Text, DateTime, DECIMAL, ForeignKey, func, text
@@ -324,6 +323,32 @@ def get_latest_snapshot_by_project(db: Session, project_id: str) -> CodeSnapshot
         .order_by(CodeSnapshot.created_at.desc())
         .first()
     )
+
+def get_project_by_id(db: Session, project_id: str) -> Project | None:
+    """
+    Fetches a project by its ID.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :return: Project object or None if not found
+    """
+    return db.query(Project).filter(Project.project_id == project_id).first()
+
+def create_project(db: Session, project_id: str, name: str) -> Project:
+    """
+    Creates a new project entry.
+    :param db: SQLAlchemy session
+    :param project_id: Project UUID
+    :param name: Project name
+    :return: Created Project object
+    """
+    project = Project(
+        project_id=project_id,
+        name=name
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
 
 
 def _as_str(x) -> str:

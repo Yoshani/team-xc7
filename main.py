@@ -43,6 +43,11 @@ class RiskAssessmentRequest(BaseModel):
     language: str
 
 
+class CreateProjectRequest(BaseModel):
+    project_id: str
+    name: str
+
+
 # ---------- API endpoints ----------
 @app.post("/classify")
 async def classify_snapshot(snapshot: SnapshotRequest, db: Session = Depends(get_db)):
@@ -187,6 +192,24 @@ def get_unique_projects(db: Session = Depends(get_db)):
         result = db.query(db_ops.Project.project_id, db_ops.Project.name).all()
         projects = [{"project_id": row.project_id, "name": row.name} for row in result]
         return {"projects": projects, "count": len(projects)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/create-project")
+def create_project(req: CreateProjectRequest, db: Session = Depends(get_db)):
+    """
+    Create a new project entry in the database.
+    """
+    try:
+        existing_project = db_ops.get_project_by_id(db, req.project_id)
+        if existing_project:
+            raise HTTPException(status_code=400, detail=f"Project with ID {req.project_id} already exists.")
+
+        db_ops.create_project(db, req.project_id, req.name)
+        return {"message": f"Project {req.name} with ID {req.project_id} created successfully."}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 

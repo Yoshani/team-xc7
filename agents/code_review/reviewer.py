@@ -5,10 +5,12 @@ This module contains the fully functional core logic for the Code Review Agent.
 It saves a new code snapshot, fetches context from the database, runs static analysis,
 calls the LLM (Groq) for an intelligent review, and saves the structured suggestions.
 """
-
+import shutil
 import subprocess
 import tempfile
 import os
+from typing import Optional
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -20,39 +22,65 @@ from util.helper import safe_json_parse
 
 router = APIRouter()
 
+
 class CodeReviewRequest(BaseModel):
-    parent_commit_id: str
+    parent_commit_id: Optional[str] = None
+    commit_id: str
     project_id: str
     developer_name: str
     code_text: str
     language: str
 
+
 def run_static_analysis(code: str, language: str) -> list:
     """Runs a basic linter on the given code and returns issues."""
     issues = []
+
     if language.lower() == "php":
+        php_path = shutil.which("php")
+        if not os.path.exists(php_path):
+            return [{"source": "system_error", "error": "PHP command not found."}]
+
         # Create a temporary file to run the linter on
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.php', delete=False) as temp_file:
             temp_file.write(code)
             file_path = temp_file.name
+
         try:
             # Run the PHP linter command
-            subprocess.run(['php', '-l', file_path], capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as e:
-            # If the linter finds an error, capture it
-            issues.append({"source": "php_linter", "error": e.stdout.strip()})
-        except FileNotFoundError:
-            issues.append({"source": "system_error", "error": "PHP command not found."})
+            result = subprocess.run(
+                [php_path, "-l", file_path],
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode != 0:
+                issues.append({
+                    "source": "php_linter",
+                    "error": result.stdout.strip() or result.stderr.strip()
+                })
+        except Exception as e:
+            issues.append({"source": "system_error", "error": str(e)})
         finally:
-            # Clean up the temporary file, ensuring it exists before removal
             if os.path.exists(file_path):
                 os.remove(file_path)
+
+        # Only if PHP linting succeeded
+        if not issues:
+            issues.append({"source": "php_linter", "message": "No syntax errors detected."})
+
+    else:
+        # Placeholder for other language linters
+        issues.append({"source": "static_analysis", "message": f"No linter configured for {language}."})
+
     return issues
+
 
 def build_review_prompt(code: str, language: str, static_issues: list, nfrs: list) -> str:
     """Builds a detailed, structured prompt for the LLM to perform a code review."""
     nfr_list_str = "\n".join([f"- {nfr.category}: {nfr.description}" for nfr in nfrs]) if nfrs else "No NFRs provided."
-    static_issues_str = "\n".join([f"- {issue['source']}: {issue.get('error', issue.get('message'))}" for issue in static_issues]) if static_issues else "No issues found by static analysis."
+    static_issues_str = "\n".join([f"- {issue['source']}: {issue.get('error', issue.get('message'))}" for issue in
+                                   static_issues]) if static_issues else "No issues found by static analysis."
 
     # Prompt remains the same
     return f"""
@@ -89,6 +117,7 @@ def build_review_prompt(code: str, language: str, static_issues: list, nfrs: lis
     Do NOT include any explanations or markdown fences in your response.
     """
 
+
 @router.post("/review", tags=["Code Review"])
 def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db)):
     """The main API endpoint for the Code Review Agent."""
@@ -97,6 +126,7 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
     new_snapshot = db_ops.create_snapshot(
         db=db,
         project_id=request.project_id,
+        commit_id=request.commit_id,
         parent_commit_id=request.parent_commit_id,
         developer_name=request.developer_name,
         code_text=request.code_text,
@@ -108,7 +138,7 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
     print(f"Code Review Agent: Static analysis found {len(static_analysis_issues)} issues.")
 
     project_nfrs = db_ops.get_non_functional_requirements_by_project(db, request.project_id)
-    print(f"Code Review Agent: Found {len(project_nfrs)} NFRs for context.") # This line should now show > 0
+    print(f"Code Review Agent: Found {len(project_nfrs)} NFRs for context.")
 
     prompt = build_review_prompt(request.code_text, request.language, static_analysis_issues, project_nfrs)
     raw_llm_output = get_llm_completion(prompt)
@@ -131,11 +161,11 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
         try:
             line_end = int(line_end) if line_end is not None else None
         except (ValueError, TypeError):
-             line_end = None
+            line_end = None
 
         new_suggestion = db_ops.create_review(
             db=db,
-            commit_id=new_snapshot.commit_id,
+            commit_id=request.commit_id,
             line_start=line_start,
             line_end=line_end,
             suggestion=suggestion.get("suggestion", "N/A"),
@@ -146,9 +176,8 @@ def start_code_review(request: CodeReviewRequest, db: Session = Depends(get_db))
 
     return {
         "message": "Code review analysis complete.",
-        "new_commit_id": new_snapshot.commit_id,
+        "commit_id": request.commit_id,
         "static_analysis_results": static_analysis_issues,
         "llm_review_suggestions": llm_suggestions,
         "saved_review_ids": saved_suggestions_ids
     }
-

@@ -1,4 +1,5 @@
 import json
+import re
 
 
 def safe_json_parse(raw_output: str) -> dict:
@@ -10,15 +11,15 @@ def safe_json_parse(raw_output: str) -> dict:
     if not raw_output or not raw_output.strip():
         return {}
 
+    # Remove Markdown code fences (```json ... ``` or ``` ... ```)
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_output.strip(), flags=re.DOTALL)
     try:
-        return json.loads(raw_output)
+        return json.loads(cleaned)
     except json.JSONDecodeError:
-        # Try repairing truncated or open-ended JSON
-        fixed = raw_output.strip()
-        if not fixed.endswith("}"):
-            fixed += "}}"
+        # If it still fails, try a last-resort fix for minor formatting issues
         try:
+            # Remove trailing commas, fix unescaped newlines, etc.
+            fixed = re.sub(r",\s*([\]}])", r"\1", cleaned)
             return json.loads(fixed)
-        except Exception as e:
-            print(f"Failed to parse LLM output: {e}")
+        except Exception:
             return {}
