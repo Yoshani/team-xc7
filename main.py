@@ -15,8 +15,7 @@ from db.db_operations import save_nfrs_statement_to_description, save_functional
 
 from agents.nfr_agent.engine import NFRGenerator
 
-TIMEOUT_SECONDS = 45  # fail fast instead of hanging forever
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+TIMEOUT_SECONDS = 45  # fail fast
 app = FastAPI()
 
 
@@ -33,7 +32,7 @@ class SnapshotRequest(BaseModel):
 class GenerateNFRRequest(BaseModel):
     functional_requirements: List[str] = Field(..., min_items=1)
     domain: Optional[str] = None
-    model: Optional[str] = DEFAULT_MODEL
+    model: Optional[str] = None
     project_id: Optional[str] = None
     save_to_db: bool = False
 
@@ -111,7 +110,7 @@ async def generate_nfrs(req: GenerateNFRRequest, db: Session = Depends(get_db)):
     Generate NFRs and (optionally) save them to MySQL.
     description := statement
     """
-    gen = NFRGenerator(model=req.model or DEFAULT_MODEL)
+    gen = NFRGenerator(model=req.model)
 
     async def _do_generate():
         # Run potentially blocking LLM call in a thread
