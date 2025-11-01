@@ -11,7 +11,8 @@ from agents.risk_control.risk_agent import calculate_risk
 from agents.code_review.reviewer import router as code_review_router
 from db.connection import get_db
 from db import db_operations as db_ops
-from db.db_operations import save_nfrs_statement_to_description, save_functional_requirements
+from db.db_operations import save_nfrs_statement_to_description, save_functional_requirements, \
+    compute_and_store_embeddings
 
 from agents.nfr_agent.engine import NFRGenerator
 
@@ -114,7 +115,7 @@ async def generate_nfrs(req: GenerateNFRRequest, db: Session = Depends(get_db)):
 
     async def _do_generate():
         # Run potentially blocking LLM call in a thread
-        return await run_in_threadpool(gen.generate, req.functional_requirements, req.domain)
+        return await run_in_threadpool(gen.generate_with_rag, db, req.functional_requirements, req.domain)
 
     try:
         result = await asyncio.wait_for(_do_generate(), timeout=TIMEOUT_SECONDS)
@@ -254,6 +255,29 @@ def get_requirements(project_id: str, db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/generate-embeddings")
+def generate_embeddings(db: Session = Depends(get_db)):
+    """
+    Compute and store embeddings for all seed FR–NFR pairs that do not yet have embeddings.
+    :param db: Database session
+    :return: Summary of how many embeddings were added
+    """
+    try:
+        before_count = db.query(db_ops.Embedding).count()
+        compute_and_store_embeddings(db)
+        after_count = db.query(db_ops.Embedding).count()
+        added = after_count - before_count
+
+        return {
+            "message": "Embedding generation completed successfully.",
+            "embeddings_added": added,
+            "total_embeddings": after_count
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding generation failed: {str(e)}")
 
 
 # (Optional) simple health check

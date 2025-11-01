@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 from typing import List, Optional, Dict, Any
 
+import numpy as np
 from groq import Groq
+from sqlalchemy.orm import Session
 
+from agents.nfr_agent.llm_agent import get_embedding
+from db import db_operations as db_ops
 from tdp_secrets import GROQ_API_KEY
 
 SYSTEM_PROMPT = (
@@ -112,3 +116,72 @@ class NFRGenerator:
             else:
                 raise
         return data
+
+    def generate_with_rag(
+            self, db: Session, functional_requirements: list[str], domain: Optional[str] = None
+    ) -> dict[str, Any]:
+        """
+        Use seed FR-NFR embeddings to provide contextual info (RAG) when generating NFRs.
+        """
+        # Fetch all embeddings
+        seed_embeddings = db_ops.get_embeddings_for_seed_pairs(db)
+
+        # Compute query embedding for all FRs combined
+        query_text = "\n".join(fr.strip() for fr in functional_requirements if fr.strip())
+        query_embedding = get_embedding(query_text)
+
+        # Simple vector similarity (cosine) to pick top relevant seed pairs
+        def cosine_sim(a: list[float], b: list[float]) -> float:
+            """Compute cosine similarity between two vectors."""
+            a, b = np.array(a), np.array(b)
+            return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8)
+
+        ranked_pairs = sorted(
+            seed_embeddings.items(),
+            key=lambda kv: cosine_sim(query_embedding, kv[1]),
+            reverse=True
+        )
+
+        top_context = []
+        for pair_id, _ in ranked_pairs[:5]:  # top 5 seed pairs
+            pair = db.query(db_ops.SeedFRNFRPair).get(pair_id)
+            if pair:
+                top_context.append(f"FR: {pair.fr_example}\nNFR: {pair.nfr_example}")
+
+        context_text = "\n\n".join(top_context)
+
+        # Inject context into system/user prompt
+        system_prompt = SYSTEM_PROMPT + "\n\nContext from similar seed pairs:\n" + context_text
+
+        fr_objs = [{"id": f"FR-{i + 1}", "text": fr.strip()} for i, fr in enumerate(functional_requirements) if
+                   fr.strip()]
+
+        user_payload = {
+            "domain": domain or "General software system",
+            "source_functional_requirements": fr_objs,
+            "schema": json.loads(NFR_SCHEMA_STR),
+            "instructions": GENERATION_INSTRUCTIONS,
+        }
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)}
+        ]
+
+        completion = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=0.2,
+            max_tokens=4096,
+            top_p=0.9,
+            stream=False,
+        )
+        content = completion.choices[0].message.content
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            start = content.find('{')
+            end = content.rfind('}')
+            if start != -1 and end != -1 and end > start:
+                return json.loads(content[start:end + 1])
+            raise

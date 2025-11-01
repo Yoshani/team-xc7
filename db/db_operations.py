@@ -3,11 +3,13 @@ CRUD operations for DB
 """
 from __future__ import annotations
 
+import json
 from typing import List, Dict, Any
 
 from sqlalchemy import Column, String, Integer, Text, DateTime, DECIMAL, ForeignKey, func, text
 from sqlalchemy.orm import relationship, Session
 
+from agents.nfr_agent.llm_agent import get_embedding
 from .connection import Base, engine
 
 
@@ -101,6 +103,31 @@ class RiskAssessment(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     snapshot = relationship("CodeSnapshot", backref="risk_assessments")
+
+
+class Embedding(Base):
+    __tablename__ = "embeddings"
+
+    embedding_id = Column(Integer, primary_key=True, autoincrement=True)
+    text_type = Column(String(50), nullable=False)
+    reference_id = Column(Integer, nullable=False)
+    embedding = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class SeedFRNFRPair(Base):
+    __tablename__ = "seed_FR_NFR_pairs"
+
+    pair_id = Column(Integer, primary_key=True, autoincrement=True)
+    fr_example = Column(Text, nullable=False)
+    nfr_example = Column(Text, nullable=False)
+    source = Column(String(255))
+    quality_checked = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+    embeddings = relationship("Embedding", primaryjoin="foreign(Embedding.reference_id)==SeedFRNFRPair.pair_id",
+                              viewonly=True)
+
 
 # ==========================
 # Create tables (one-time init)
@@ -324,6 +351,7 @@ def get_latest_snapshot_by_project(db: Session, project_id: str) -> CodeSnapshot
         .first()
     )
 
+
 def get_project_by_id(db: Session, project_id: str) -> Project | None:
     """
     Fetches a project by its ID.
@@ -332,6 +360,7 @@ def get_project_by_id(db: Session, project_id: str) -> Project | None:
     :return: Project object or None if not found
     """
     return db.query(Project).filter(Project.project_id == project_id).first()
+
 
 def create_project(db: Session, project_id: str, name: str) -> Project:
     """
@@ -349,6 +378,75 @@ def create_project(db: Session, project_id: str, name: str) -> Project:
     db.commit()
     db.refresh(project)
     return project
+
+
+def compute_and_store_embeddings(db: Session):
+    """
+    Compute embeddings for all FR-NFR seed pairs that do not yet have embeddings,
+    and store them in the embeddings table.
+    :param db: SQLAlchemy session
+    """
+
+    # Get all pair IDs that already have embeddings
+    existing_ids = {
+        row.reference_id
+        for row in db.query(Embedding.reference_id)
+        .filter(Embedding.text_type == "seed_pair")
+        .all()
+    }
+
+    # Fetch all seed pairs
+    pairs = db.query(SeedFRNFRPair).all()
+
+    new_embeddings = []
+    for pair in pairs:
+        if pair.pair_id in existing_ids:
+            continue  # Skip if embedding already exists
+
+        combined_text = f"FR: {pair.fr_example}\nNFR: {pair.nfr_example}"
+        embedding_vector = get_embedding(combined_text)
+
+        new_embeddings.append(
+            Embedding(
+                text_type="seed_pair",
+                reference_id=pair.pair_id,
+                embedding=json.dumps(embedding_vector)
+            )
+        )
+
+    if new_embeddings:
+        db.add_all(new_embeddings)
+        db.commit()
+        print(f"Added {len(new_embeddings)} new embeddings.")
+    else:
+        print("All seed pairs already have embeddings.")
+
+
+def get_embeddings_for_seed_pairs(
+        db: Session, pair_ids: list[int] | None = None
+) -> dict[int, list[float]]:
+    """
+    Retrieve embeddings for seed FR-NFR pairs.
+
+    :param db: SQLAlchemy session
+    :param pair_ids: Optional list of seed pair IDs to fetch. If None, fetch all.
+    :return: Dictionary mapping pair_id -> embedding vector (list of floats)
+    """
+    query = db.query(Embedding.reference_id, Embedding.embedding).filter(
+        Embedding.text_type == "seed_pair"
+    )
+    if pair_ids:
+        query = query.filter(Embedding.reference_id.in_(pair_ids))
+
+    results = query.all()
+    embeddings = {}
+    for ref_id, emb_json in results:
+        try:
+            embeddings[ref_id] = json.loads(emb_json)
+        except json.JSONDecodeError:
+            embeddings[ref_id] = []  # fallback empty list if corrupted
+
+    return embeddings
 
 
 def _as_str(x) -> str:

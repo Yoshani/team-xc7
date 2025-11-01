@@ -1,3 +1,5 @@
+-f https://download.pytorch.org/whl/cpu/torch_stable.html
+
 sqlalchemy~=2.0.43
 connection~=2021.7.20
 groq~=0.32.0
@@ -7,3 +9,6 @@ pydantic~=2.11.9
 PyMySQL==1.1.2
 streamlit==1.50.0
 uvicorn==0.38.0
+transformers~=4.57.1
+starlette~=0.48.0
+requests~=2.32.5
