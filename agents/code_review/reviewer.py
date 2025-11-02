@@ -5,20 +5,21 @@ This module contains the fully functional core logic for the Code Review Agent.
 It saves a new code snapshot, fetches context from the database, runs static analysis,
 calls the LLM (Groq) for an intelligent review, and saves the structured suggestions.
 """
+import os
+import py_compile
 import shutil
 import subprocess
 import tempfile
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from db.connection import get_db
 from db import db_operations as db_ops
-from .llm_agent import get_llm_completion
+from db.connection import get_db
 from util.helper import safe_json_parse
+from .llm_agent import get_llm_completion
 
 router = APIRouter()
 
@@ -33,27 +34,30 @@ class CodeReviewRequest(BaseModel):
 
 
 def run_static_analysis(code: str, language: str) -> list:
-    """Runs a basic linter on the given code and returns issues."""
+    """
+    Runs a basic static analysis (linter) for the given code and language.
+    :param code: The source code to analyze.
+    :param language: Programming language (e.g., "php" or "python").
+    :return: A list of detected issues or messages.
+    """
     issues = []
+    language = language.lower()
 
-    if language.lower() == "php":
+    if language == "php":
         php_path = shutil.which("php")
-        if not os.path.exists(php_path):
+        if not php_path or not os.path.exists(php_path):
             return [{"source": "system_error", "error": "PHP command not found."}]
 
-        # Create a temporary file to run the linter on
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.php', delete=False) as temp_file:
             temp_file.write(code)
             file_path = temp_file.name
 
         try:
-            # Run the PHP linter command
             result = subprocess.run(
                 [php_path, "-l", file_path],
                 capture_output=True,
                 text=True
             )
-
             if result.returncode != 0:
                 issues.append({
                     "source": "php_linter",
@@ -65,13 +69,40 @@ def run_static_analysis(code: str, language: str) -> list:
             if os.path.exists(file_path):
                 os.remove(file_path)
 
-        # Only if PHP linting succeeded
         if not issues:
             issues.append({"source": "php_linter", "message": "No syntax errors detected."})
 
+    elif language == "python":
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False) as temp_file:
+            temp_file.write(code)
+            file_path = temp_file.name
+
+        try:
+            # Basic syntax check using py_compile
+            py_compile.compile(file_path, doraise=True)
+            issues.append({"source": "python_compile", "message": "No syntax errors detected."})
+
+            # Optional: Try flake8 if installed
+            flake8_path = shutil.which("flake8")
+            if flake8_path:
+                result = subprocess.run(
+                    [flake8_path, file_path],
+                    capture_output=True,
+                    text=True
+                )
+                if result.stdout.strip():
+                    for line in result.stdout.strip().split("\n"):
+                        issues.append({"source": "flake8", "warning": line})
+        except py_compile.PyCompileError as e:
+            issues.append({"source": "python_compile", "error": str(e)})
+        except Exception as e:
+            issues.append({"source": "system_error", "error": str(e)})
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
     else:
-        # Placeholder for other language linters
-        issues.append({"source": "static_analysis", "message": f"No linter configured for {language}."})
+        issues.append({"source": "static_analysis", "message": f"No linter configured for '{language}'."})
 
     return issues
 
