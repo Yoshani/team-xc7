@@ -5,6 +5,9 @@ from typing import List, Optional
 import asyncio
 from starlette.concurrency import run_in_threadpool
 
+
+from fastapi.middleware.cors import CORSMiddleware
+
 from agents.prod_metrics.classify_reviews import classify_commits
 from agents.prod_metrics.generate_metrics import calculate_metrics
 from agents.risk_control.risk_agent import calculate_risk
@@ -18,6 +21,18 @@ from agents.nfr_agent.engine import NFRGenerator
 
 TIMEOUT_SECONDS = 45  # fail fast
 app = FastAPI()
+
+origins = [
+    "http://localhost:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------- Request schema ----------
