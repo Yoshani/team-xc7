@@ -239,6 +239,10 @@ def calculate_developer_metrics(accepted_or_modified, category_counts, dev_total
         avg = sum(by_day.values()) / len(by_day) if by_day else 0.0
         avg_per_dev[dev] = round(avg, 2)
 
+    for dev in dev_totals:
+        if dev not in avg_per_dev:
+            avg_per_dev[dev] = 0.0
+
     # acceptance rate (inclusive of both accepted and modified)
     acceptance_rate = {
         dev: round((accepted_or_modified.get(dev, 0) / dev_totals[dev]), 2) if dev_totals[dev] else 0.0

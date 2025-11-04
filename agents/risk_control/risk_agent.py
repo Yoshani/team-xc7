@@ -21,8 +21,8 @@ from db.db_operations import CodeSnapshot
 FR_WEIGHT = 0.5
 NFR_WEIGHT = 0.4
 COMPILATION_WEIGHT = 0.1
-RISK_GO_THRESHOLD = 0.7
-RISK_NO_GO_THRESHOLD = 0.5
+RISK_MEDIUM_THRESHOLD = 0.7
+RISK_GO_THRESHOLD = 0.5
 
 RISK_LEVELS = {
     "Low": (0.0, 0.4),
@@ -87,6 +87,8 @@ def build_compilation_prompt(snapshot_code: str, language: str) -> str:
         - Focus on syntax correctness, missing imports, unclosed structures, or language misuse.
         - Do not actually execute the code.
         - Return ONLY the JSON object. No extra text or explanations.
+        
+        Return a STRICT JSON object. Ensure proper commas and quotes.
     """
 
 
@@ -141,12 +143,12 @@ def calculate_risk(db: Session, project_id: str, language: str) -> Dict:
     risk_score = round(risk_numeric, 2)
     risk_level = classify_risk_level(risk_score)
 
-    if risk_score >= RISK_GO_THRESHOLD:
+    if risk_score <= RISK_GO_THRESHOLD:  # <= 0.5 = low risk
         release_decision = "Release"
-    elif risk_score <= RISK_NO_GO_THRESHOLD:
-        release_decision = "Do Not Release"
-    else:
+    elif risk_score <= RISK_MEDIUM_THRESHOLD:  # between 0.5 and 0.7 = medium risk
         release_decision = "Conditionally Release"
+    else:  # > 0.7 = high risk
+        release_decision = "Do Not Release"
 
     fr_score = round(fr_completion_rate, 2)
     nfr_score = round(nfr_completion_rate, 2)
