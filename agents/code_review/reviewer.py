@@ -37,12 +37,13 @@ def run_static_analysis(code: str, language: str) -> list:
     """
     Runs a basic static analysis (linter) for the given code and language.
     :param code: The source code to analyze.
-    :param language: Programming language (e.g., "php" or "python").
+    :param language: Programming language (e.g., "php", "python", or "javascript").
     :return: A list of detected issues or messages.
     """
     issues = []
     language = language.lower()
 
+    # --- PHP ---
     if language == "php":
         php_path = shutil.which("php")
         if not php_path or not os.path.exists(php_path):
@@ -72,17 +73,17 @@ def run_static_analysis(code: str, language: str) -> list:
         if not issues:
             issues.append({"source": "php_linter", "message": "No syntax errors detected."})
 
+    # --- PYTHON ---
     elif language == "python":
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False) as temp_file:
             temp_file.write(code)
             file_path = temp_file.name
 
         try:
-            # Basic syntax check using py_compile
             py_compile.compile(file_path, doraise=True)
             issues.append({"source": "python_compile", "message": "No syntax errors detected."})
 
-            # Optional: Try flake8 if installed
+            # Optional flake8 check
             flake8_path = shutil.which("flake8")
             if flake8_path:
                 result = subprocess.run(
@@ -101,6 +102,49 @@ def run_static_analysis(code: str, language: str) -> list:
             if os.path.exists(file_path):
                 os.remove(file_path)
 
+    # --- JAVASCRIPT ---
+    elif language in ["javascript", "js"]:
+        node_path = shutil.which("node")
+        if not node_path or not os.path.exists(node_path):
+            return [{"source": "system_error", "error": "Node.js command not found."}]
+
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.js', delete=False) as temp_file:
+            temp_file.write(code)
+            file_path = temp_file.name
+
+        try:
+            # Basic syntax check using node --check
+            result = subprocess.run(
+                [node_path, "--check", file_path],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                issues.append({
+                    "source": "node_check",
+                    "error": result.stderr.strip() or result.stdout.strip()
+                })
+            else:
+                issues.append({"source": "node_check", "message": "No syntax errors detected."})
+
+            # Optional: ESLint if installed
+            eslint_path = shutil.which("eslint")
+            if eslint_path:
+                result = subprocess.run(
+                    [eslint_path, file_path, "--no-color"],
+                    capture_output=True,
+                    text=True
+                )
+                if result.stdout.strip():
+                    for line in result.stdout.strip().split("\n"):
+                        issues.append({"source": "eslint", "warning": line})
+        except Exception as e:
+            issues.append({"source": "system_error", "error": str(e)})
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+    # --- UNKNOWN LANGUAGE ---
     else:
         issues.append({"source": "static_analysis", "message": f"No linter configured for '{language}'."})
 
